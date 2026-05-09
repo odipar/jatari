@@ -130,7 +130,7 @@ public class YmFileParser {
         int b1 = in.readUnsignedByte();
         int b2 = in.readUnsignedByte();
         int b3 = in.readUnsignedByte();
-        return (long) b3 << 24 | (long) b2 << 16 | (long) b1 << 8 | b0;
+        return ((long) b3 << 24) | ((long) b2 << 16) | ((long) b1 << 8) | b0;
     }
 
     // -----------------------------------------------------------------------
