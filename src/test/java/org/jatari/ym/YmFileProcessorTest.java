@@ -74,7 +74,7 @@ class YmFileProcessorTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void processor_captureYm_has14IntOutputsAtFrameRate() throws IOException {
+    void processor_captureYm_has15OutputsAtFrameRate() throws IOException {
         YmFile ym = YmFileParser.parse(DATA_DIR.resolve("capture.ym"));
         var proc = YmFileProcessor.of(ym);
 
@@ -82,14 +82,28 @@ class YmFileProcessorTest {
         assertEquals(ym.frameRate(), proc.context().frequency(),
                 "context frequency must equal frame rate");
 
-        // Must have exactly 14 outputs, all INT
-        assertEquals(14, proc.outType().length, "14 output signals");
-        for (var t : proc.outType()) {
-            assertEquals(org.jaust.Signal.Type.INT, t, "all outputs must be INT");
+        // Must have exactly 15 outputs: 14 INT registers + 1 BOOL write-enable
+        assertEquals(15, proc.outType().length, "15 output signals");
+        for (int i = 0; i < 14; i++) {
+            assertEquals(org.jaust.Signal.Type.INT, proc.outType()[i],
+                    "output %d must be INT".formatted(i));
         }
+        assertEquals(org.jaust.Signal.Type.BOOL, proc.outType()[14],
+                "output 14 must be BOOL (write-enable)");
 
         // Must have zero inputs
         assertEquals(0, proc.inType().length, "zero inputs");
+    }
+
+    @Test
+    void processor_captureYm_writeEnableAlwaysTrueInSourceDomain() throws IOException {
+        YmFile ym = YmFileParser.parse(DATA_DIR.resolve("capture.ym"));
+        var signals = YmFileProcessor.of(ym).apply();
+
+        for (int frame = 0; frame < Math.min(10, ym.numFrames()); frame++) {
+            assertTrue(signals.at(14).boolAt(frame),
+                    "write-enable must be true at frame %d".formatted(frame));
+        }
     }
 
     @Test
@@ -127,12 +141,13 @@ class YmFileProcessorTest {
         var proc = YmFileProcessor.of(ym);
         var signals = proc.apply();
 
-        assertEquals(14, proc.outType().length);
+        assertEquals(15, proc.outType().length);
         assertEquals(ym.frameRate(), proc.context().frequency());
 
         for (int r = 0; r < 14; r++) {
             int v = signals.at(r).intAt(0);
             assertTrue(v >= 0 && v <= 255, "R%d signal value out of range".formatted(r));
         }
+        assertTrue(signals.at(14).boolAt(0), "write-enable must be true at frame 0");
     }
 }

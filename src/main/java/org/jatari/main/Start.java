@@ -4,6 +4,7 @@ import org.jaust.Processor;
 import org.jatari.ym.YmFile;
 import org.jatari.ym.YmFileParser;
 import org.jatari.ym.YmFileProcessor;
+import org.jatari.ym.Ym2149Processor;
 import org.jm2149.vhdl.indexed.Ym2149AudioIndexed;
 
 import java.nio.file.Path;
@@ -16,18 +17,35 @@ public class Start {
         System.out.printf("Loaded: %s (%d frames @ %d Hz, clock=%d Hz)%n",
                 ymPath.getFileName(), ym.numFrames(), ym.frameRate(), ym.ymClock());
 
-        Processor proc = YmFileProcessor.of(ym);
-        System.out.printf("Processor: %d outputs, context frequency=%d Hz%n",
-                proc.outType().length, proc.context().frequency());
+        Processor fileProc = YmFileProcessor.of(ym);
+        System.out.printf("YmFileProcessor: %d outputs (14 INT registers + 1 BOOL write-enable), context frequency=%d Hz%n",
+                fileProc.outType().length, fileProc.context().frequency());
 
         // Print first 3 frames (registers R0–R13)
-        var signals = proc.apply();
+        var signals = fileProc.apply();
         for (int frame = 0; frame < Math.min(3, ym.numFrames()); frame++) {
             System.out.print("Frame " + frame + ": ");
             for (int r = 0; r < 14; r++) {
                 System.out.printf("R%d=%3d ", r, signals.at(r).intAt(frame));
             }
-            System.out.println();
+            System.out.printf("we=%b%n", signals.at(14).boolAt(frame));
+        }
+
+        // --- YM2149 processor demo (15-signal pipeline) ---
+        Processor ymProc = Ym2149Processor.of(fileProc);
+        System.out.printf("%nYm2149Processor: %d INT outputs, context frequency=%d Hz%n",
+                ymProc.outType().length, ymProc.context().frequency());
+
+        var ymOut = ymProc.apply();
+        int samplesToShow = 3;
+        long ratio = Ym2149Processor.YM_CLOCK / ym.frameRate(); // samples per frame
+        for (int frame = 0; frame < samplesToShow; frame++) {
+            long t = frame * ratio;
+            System.out.printf("YM sample t=%6d (frame %d): chA=%2d chB=%2d chC=%2d%n",
+                    t, frame,
+                    ymOut.at(0).intAt(t),
+                    ymOut.at(1).intAt(t),
+                    ymOut.at(2).intAt(t));
         }
 
         // --- Original YM2149 hardware demo ---
@@ -47,3 +65,4 @@ public class Start {
         }
     }
 }
+
