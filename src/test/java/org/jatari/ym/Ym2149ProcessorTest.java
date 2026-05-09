@@ -15,6 +15,9 @@ class Ym2149ProcessorTest {
 
     private static final Path DATA_DIR = Path.of("data/ym_format");
 
+    /** Number of YM clock samples to check in range-validation tests. */
+    private static final int SAMPLES_TO_TEST = 2500;
+
     // -----------------------------------------------------------------------
     // Structure / metadata
     // -----------------------------------------------------------------------
@@ -49,26 +52,22 @@ class Ym2149ProcessorTest {
 
     @Test
     void processor_channelOutputsInValidRange() throws IOException {
-        var source = fileProcessor("capture.ym");
-        var signals = Ym2149Processor.of(source).apply();
-
-        // Query a number of samples and check DAC index is 0-31
-        for (long t = 0; t < 2500; t++) {
-            int a = signals.at(0).intAt(t);
-            int b = signals.at(1).intAt(t);
-            int c = signals.at(2).intAt(t);
-            assertTrue(a >= 0 && a <= 31, "chA out of range at t=" + t + ": " + a);
-            assertTrue(b >= 0 && b <= 31, "chB out of range at t=" + t + ": " + b);
-            assertTrue(c >= 0 && c <= 31, "chC out of range at t=" + t + ": " + c);
-        }
+        assertChannelOutputsInRange(fileProcessor("capture.ym"));
     }
 
     @Test
     void processor_lzhFile_channelOutputsInValidRange() throws IOException {
-        var source = fileProcessor("5th Gear 1 title.ym");
-        var signals = Ym2149Processor.of(source).apply();
+        assertChannelOutputsInRange(fileProcessor("5th Gear 1 title.ym"));
+    }
 
-        for (long t = 0; t < 2500; t++) {
+    /**
+     * Drives the given source through {@link Ym2149Processor} and asserts
+     * that all three channel outputs are in the valid 5-bit DAC index range
+     * [0, 31] for the first {@value SAMPLES_TO_TEST} YM clock samples.
+     */
+    private static void assertChannelOutputsInRange(org.jaust.Processor source) {
+        var signals = Ym2149Processor.of(source).apply();
+        for (long t = 0; t < SAMPLES_TO_TEST; t++) {
             int a = signals.at(0).intAt(t);
             int b = signals.at(1).intAt(t);
             int c = signals.at(2).intAt(t);
@@ -144,7 +143,7 @@ class Ym2149ProcessorTest {
         var signals1 = Ym2149Processor.of(source).apply();
         var signals2 = Ym2149Processor.of(source).apply();
 
-        for (long t = 0; t < 500; t++) {
+        for (long t = 0; t < SAMPLES_TO_TEST; t++) {
             assertEquals(signals1.at(0).intAt(t), signals2.at(0).intAt(t),
                     "chA must be deterministic at t=" + t);
             assertEquals(signals1.at(1).intAt(t), signals2.at(1).intAt(t),

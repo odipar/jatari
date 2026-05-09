@@ -58,7 +58,7 @@ import org.jm2149.vhdl.indexed.Ym2149AudioIndexed;
 public record Ym2149Processor(Context context, Processor source) implements DefaultProcessor {
 
     /** YM2149 chip clock frequency in Hz. */
-    static final long YM_CLOCK = 250_000L;
+    public static final long YM_CLOCK = 250_000L;
 
     private static final Signal.Type[] OUT_TYPES =
             {Signal.Type.INT, Signal.Type.INT, Signal.Type.INT};
