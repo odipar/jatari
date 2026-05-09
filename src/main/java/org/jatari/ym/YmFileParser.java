@@ -1,5 +1,8 @@
 package org.jatari.ym;
 
+import org.apache.commons.compress.archivers.ArchiveEntry;
+import org.apache.commons.compress.archivers.lha.LhaArchiveInputStream;
+
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -80,57 +83,16 @@ public class YmFileParser {
     }
 
     /**
-     * Extracts the first file from an LHA level-0 archive.
-     *
-     * <p>Only the -lh5- method is supported; other methods throw
-     * {@link IOException}.
+     * Extracts the first file from an LHA archive using Apache Commons Compress.
      */
     private static byte[] extractLha(byte[] data) throws IOException {
-        DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
-
-        // Parse level-0 header
-        int  headerSize    = in.readUnsignedByte();   // byte 0: size of the rest of the header
-        in.readUnsignedByte();                         // byte 1: checksum (not verified)
-        byte[] method = new byte[5];
-        in.readFully(method);                          // bytes 2-6: method id (e.g. "-lh5-")
-        long compSize = readLe32(in);                  // bytes 7-10: compressed size (LE)
-        long origSize = readLe32(in);                  // bytes 11-14: original size (LE)
-        in.skip(4);                                    // bytes 15-18: modified time
-        in.readUnsignedByte();                         // byte 19: file attribute
-        int  nameLen  = in.readUnsignedByte();         // byte 20: filename length
-
-        // headerSize = bytes consumed from byte 2 onward (not including byte 0 and 1)
-        // Bytes 2..headerSize+1 inclusive are the header body.
-        // We've consumed: 5 (method) + 4 + 4 + 4 + 1 + 1 = 19 bytes from byte 2 onward.
-        // Remaining header bytes: headerSize - 19
-        int remaining = headerSize - 19;
-        if (remaining < nameLen + 2) {
-            // filename + CRC must fit
-            throw new IOException("LHA header too short (headerSize=" + headerSize + ')');
+        try (LhaArchiveInputStream lhaIn = new LhaArchiveInputStream(new ByteArrayInputStream(data))) {
+            ArchiveEntry entry = lhaIn.getNextEntry();
+            if (entry == null) {
+                throw new IOException("Empty LHA archive");
+            }
+            return lhaIn.readAllBytes();
         }
-        in.skip(nameLen);       // filename
-        in.skip(2);             // CRC-16
-        in.skip(remaining - nameLen - 2);  // any extra header bytes
-
-        String methodStr = new String(method);
-        if (!methodStr.equals("-lh5-")) {
-            throw new IOException("Unsupported LHA method: " + methodStr
-                    + " (only -lh5- is supported)");
-        }
-
-        ByteArrayOutputStream baos = new ByteArrayOutputStream((int) origSize);
-        Lzh5Decompressor dec = new Lzh5Decompressor(in, compSize);
-        dec.decompress(baos, origSize);
-        return baos.toByteArray();
-    }
-
-    /** Read a 32-bit little-endian unsigned value. */
-    private static long readLe32(DataInputStream in) throws IOException {
-        int b0 = in.readUnsignedByte();
-        int b1 = in.readUnsignedByte();
-        int b2 = in.readUnsignedByte();
-        int b3 = in.readUnsignedByte();
-        return (long) b3 << 24 | (long) b2 << 16 | (long) b1 << 8 | b0;
     }
 
     // -----------------------------------------------------------------------
