@@ -1,17 +1,42 @@
 package org.jatari.main;
 
+import org.jaust.Processor;
+import org.jatari.ym.YmFile;
+import org.jatari.ym.YmFileParser;
+import org.jatari.ym.YmFileProcessor;
 import org.jm2149.vhdl.indexed.Ym2149AudioIndexed;
 
+import java.nio.file.Path;
+
 public class Start {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
+        // --- YM file processor demo ---
+        Path ymPath = Path.of("data/ym_format/capture.ym");
+        YmFile ym = YmFileParser.parse(ymPath);
+        System.out.printf("Loaded: %s (%d frames @ %d Hz, clock=%d Hz)%n",
+                ymPath.getFileName(), ym.numFrames(), ym.frameRate(), ym.ymClock());
+
+        Processor proc = YmFileProcessor.of(ym);
+        System.out.printf("Processor: %d outputs, context frequency=%d Hz%n",
+                proc.outType().length, proc.context().frequency());
+
+        // Print first 3 frames (registers R0–R13)
+        var signals = proc.apply();
+        for (int frame = 0; frame < Math.min(3, ym.numFrames()); frame++) {
+            System.out.print("Frame " + frame + ": ");
+            for (int r = 0; r < 14; r++) {
+                System.out.printf("R%d=%3d ", r, signals.at(r).intAt(frame));
+            }
+            System.out.println();
+        }
+
+        // --- Original YM2149 hardware demo ---
         var ym2149 = new Ym2149AudioIndexed();
         ym2149.applyReset();
         ym2149.setNoisePeriod(5);
         ym2149.setVolume(0, 15);
-        //ym2149.setVolume(1, 7);
-        //ym2149.setVolume(2, 3);
         ym2149.setMixer(false, false, false, true, true, true);
-        
+
         for (int i = 0; i < 1_000_000_000; i++) {
             ym2149.risingEdge(true, false, true, false, false, 0);
             if ((i % 100_000_000) == 0) {
