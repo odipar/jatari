@@ -196,10 +196,6 @@ public final class Ym2149Processor {
                 size++;
             }
         }
-
-        private static long gcd(long a, long b) {
-            return b == 0L ? a : gcd(b, a % b);
-        }
     }
 
     private static long gcd(long a, long b) {
