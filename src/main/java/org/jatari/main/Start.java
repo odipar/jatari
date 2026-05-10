@@ -1,5 +1,6 @@
 package org.jatari.main;
 
+import org.jatari.player.PsgPlayerApp;
 import org.jatari.player.YmPlayerApp;
 import org.jatari.ym.format.YmFile;
 import org.jatari.ym.format.YmFileParser;
@@ -13,6 +14,12 @@ import java.nio.file.Path;
 public class Start {
     public static void main(String[] args) throws Exception {
         YmPlayerApp.main(args);
+    }
+}
+
+class StartPsg {
+    public static void main(String[] args) throws Exception {
+        PsgPlayerApp.main(args);
     }
 }
 
