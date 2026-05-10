@@ -68,7 +68,10 @@ public class HighPassFilter implements DefaultProcessor {
         IntSignal    x        = (IntSignal)    inputs.at(0);
         DoubleSignal cutoffHz = (DoubleSignal) inputs.at(1);
 
-        // Compute LPF with the same inputs; y_hpf = x - y_lpf
+        // Compute LPF with the same inputs; y_hpf = x - y_lpf.
+        // The x signal passed to the inner LPF is the same reference, so when
+        // the LPF evaluates x at the same t it hits the DoubleCache inside
+        // LowPassFilter (the outer cache wrapping the rec output).
         SignalArray lpfOut = lpf.apply(inputs);
         IntSignal   yLpf   = (IntSignal) lpfOut.at(0);
 
@@ -77,8 +80,12 @@ public class HighPassFilter implements DefaultProcessor {
 
             @Override
             public int intAt(long t) {
-                // Bypass when cutoff is 0 (alpha = 0 makes LPF a wire, so x - x = 0)
-                if (cutoffHz.doubleAt(t) <= 0.0) return x.intAt(t);
+                // Evaluate cutoff once to avoid redundant signal reads.
+                double fc = cutoffHz.doubleAt(t);
+                if (fc <= 0.0) return x.intAt(t);
+                // x.intAt(t) is evaluated once here; the inner LPF's subsequent
+                // evaluation of the same signal at t hits the DoubleCache in
+                // LowPassFilter, keeping the total work O(1) per sample.
                 return x.intAt(t) - yLpf.intAt(t);
             }
         });
