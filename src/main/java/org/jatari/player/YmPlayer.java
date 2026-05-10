@@ -69,7 +69,8 @@ public class YmPlayer {
         F8KHZ  ( "8 kHz",  8_000),
         F10KHZ ("10 kHz", 10_000),
         F12KHZ ("12 kHz", 12_000),
-        F16KHZ ("16 kHz", 16_000);
+        F16KHZ ("16 kHz", 16_000),
+        F20KHZ ("20 kHz", 20_000);
 
         /** Human-readable label shown in the UI. */
         public final String label;
@@ -276,11 +277,19 @@ public class YmPlayer {
         YmMixer mixer     = new YmMixer(new DefaultContext(Ym2149Processor.YM_CLOCK));
         SignalArray mixOut = mixer.apply(ymOut);
         Signal mixSignal  = mixOut.at(0);   // single INT at 2 MHz
-
+        // ---- Optional jaust IIR low-pass filter --------------------------------
+        if (opt != LpfOption.OFF) {
+            System.out.println("FILTER ON " + opt);
+            LowPassFilter lpf    = new LowPassFilter(mixSignal.context(), opt.cutoffHz);
+            SignalArray   lpfOut = lpf.apply(DefaultArray.a(mixSignal));
+            mixSignal = lpfOut.at(0);
+        }
         // ---- Box-filter downsample to 44 100 Hz --------------------------------
         final long ymClock    = Ym2149Processor.YM_CLOCK;
         DefaultContext ctx44k = new DefaultContext(SAMPLE_RATE);
 
+        final var mm = mixSignal;
+        
         IntSignal downsampled = new IntSignal() {
             @Override public org.jaust.Context context() { return ctx44k; }
             @Override public int intAt(long t) {
@@ -289,18 +298,12 @@ public class YmPlayer {
                 long sum   = 0;
                 long count = tymEnd - tymStart;
                 for (long tym = tymStart; tym < tymEnd; tym++) {
-                    sum += mixSignal.intAt(tym);
+                    sum += mm.intAt(tym);
                 }
                 return (count > 0) ? (int) (sum / count) : 0;
             }
         };
-
-        // ---- Optional jaust IIR low-pass filter --------------------------------
-        if (opt != LpfOption.OFF) {
-            LowPassFilter lpf    = new LowPassFilter(ctx44k, opt.cutoffHz);
-            SignalArray   lpfOut = lpf.apply(DefaultArray.a(downsampled));
-            return lpfOut.at(0);
-        }
+        
         return downsampled;
     }
 
