@@ -99,13 +99,13 @@ public class YmPlayer {
      */
     public enum HpfOption {
         OFF    ("No filter",   0),
-        F4KHZ  ( "4 kHz",  4_000),
-        F6KHZ  ( "6 kHz",  6_000),
-        F8KHZ  ( "8 kHz",  8_000),
-        F10KHZ ("10 kHz", 10_000),
-        F12KHZ ("12 kHz", 12_000),
-        F16KHZ ("16 kHz", 16_000),
-        F20KHZ ("20 kHz", 20_000);
+        F4KHZ  ( "40 Hz",  40),
+        F6KHZ  ( "60 Hz",  60),
+        F8KHZ  ( "80 Hz",  80),
+        F10KHZ ("100 Hz", 100),
+        F12KHZ ("120 Hz", 120),
+        F16KHZ ("160 Hz", 160),
+        F20KHZ ("200 Hz", 200);
 
         /** Human-readable label shown in the UI. */
         public final String label;
