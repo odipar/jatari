@@ -1,5 +1,6 @@
 package org.jatari.player;
 
+import org.jatari.player.YmPlayer.LpfOption;
 import org.jatari.ym.format.YmFile;
 import org.jatari.ym.format.YmFileParser;
 
@@ -10,6 +11,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.stream.Stream;
 
 /**
  * Java Swing application for playing YM2149 music files at 44.1 kHz.
@@ -20,10 +22,14 @@ import java.nio.file.Paths;
  *
  * <h2>Usage</h2>
  * <ol>
- *   <li>Click <em>Open…</em> to choose a {@code .ym} file.</li>
+ *   <li>Click a file in the left-hand file list to load and play it directly,
+ *       or click <em>Open…</em> to navigate to any {@code .ym} file.</li>
  *   <li>Click <em>Play</em> to start playback; the button label changes to
  *       <em>Stop</em>.</li>
  *   <li>Click <em>Stop</em> (or <em>Play</em> again) to halt playback.</li>
+ *   <li>Select a cutoff in the <em>Filter</em> combo-box to enable the IIR
+ *       low-pass filter on the next playback.</li>
+ *   <li>Click <em>Export WAV…</em> to save the current song as a WAV file.</li>
  * </ol>
  */
 public class YmPlayerApp {
@@ -34,7 +40,7 @@ public class YmPlayerApp {
 
     private static final String APP_TITLE = "YM2149 44.1 kHz Player";
 
-    /** Default starting directory for the file chooser. */
+    /** Default starting directory for the file chooser and the file list. */
     private static final Path DEFAULT_DIR = Paths.get("data/ym_format");
 
     // -----------------------------------------------------------------------
@@ -45,6 +51,8 @@ public class YmPlayerApp {
 
     private Path    selectedPath;
     private YmFile  selectedYm;
+    /** The directory currently shown in the file list. */
+    private Path    currentDir;
 
     // -----------------------------------------------------------------------
     // Swing components
@@ -59,7 +67,11 @@ public class YmPlayerApp {
     private JProgressBar progressBar;
     private JButton    btnOpen;
     private JButton    btnPlay;
+    private JButton    btnExport;
     private JLabel     lblStatus;
+    private JComboBox<LpfOption>     cmbFilter;
+    private JList<Path>              fileList;
+    private DefaultListModel<Path>   fileListModel;
 
     // Timer that refreshes the progress display ~10 times per second
     private Timer      uiTimer;
@@ -79,18 +91,17 @@ public class YmPlayerApp {
     private void buildAndShow() {
         frame = new JFrame(APP_TITLE);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setResizable(false);
+        frame.setResizable(true);
 
         JPanel root = new JPanel(new BorderLayout(8, 8));
         root.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        root.add(buildInfoPanel(),    BorderLayout.NORTH);
-        root.add(buildProgressPanel(), BorderLayout.CENTER);
-        root.add(buildControlPanel(), BorderLayout.SOUTH);
+        root.add(buildFileListPanel(), BorderLayout.WEST);
+        root.add(buildMainPanel(),     BorderLayout.CENTER);
 
         frame.setContentPane(root);
         frame.pack();
-        frame.setMinimumSize(new Dimension(480, frame.getHeight()));
+        frame.setMinimumSize(new Dimension(620, 320));
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
 
@@ -109,6 +120,51 @@ public class YmPlayerApp {
                 SwingUtilities.invokeLater(() -> onPlaybackStopped());
             }
         });
+
+        // Populate file list with the default directory
+        currentDir = Files.isDirectory(DEFAULT_DIR) ? DEFAULT_DIR : Paths.get(".");
+        refreshFileList(currentDir);
+    }
+
+    /** Left-hand panel: scrollable list of .ym files in the current directory. */
+    private JPanel buildFileListPanel() {
+        JPanel panel = new JPanel(new BorderLayout(4, 4));
+        panel.setBorder(BorderFactory.createTitledBorder("Files"));
+        panel.setPreferredSize(new Dimension(200, 0));
+
+        fileListModel = new DefaultListModel<>();
+        fileList      = new JList<>(fileListModel);
+        fileList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        fileList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(
+                    JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof Path p) setText(p.getFileName().toString());
+                return this;
+            }
+        });
+
+        // Single-click: load and play the selected file
+        fileList.addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            Path selected = fileList.getSelectedValue();
+            if (selected != null) loadAndPlay(selected);
+        });
+
+        JScrollPane scroll = new JScrollPane(fileList);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        panel.add(scroll, BorderLayout.CENTER);
+        return panel;
+    }
+
+    /** Right-hand main panel: song info + progress + controls. */
+    private JPanel buildMainPanel() {
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.add(buildInfoPanel(),     BorderLayout.NORTH);
+        panel.add(buildProgressPanel(), BorderLayout.CENTER);
+        panel.add(buildControlPanel(),  BorderLayout.SOUTH);
+        return panel;
     }
 
     private JPanel buildInfoPanel() {
@@ -145,26 +201,41 @@ public class YmPlayerApp {
     private JPanel buildControlPanel() {
         JPanel panel = new JPanel(new BorderLayout(4, 4));
 
+        // ---- Filter row -------------------------------------------------
+        JPanel filterRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        filterRow.add(new JLabel("Filter:"));
+        cmbFilter = new JComboBox<>(LpfOption.values());
+        cmbFilter.setSelectedItem(LpfOption.OFF);
+        cmbFilter.addActionListener(e ->
+                player.setLpfOption((LpfOption) cmbFilter.getSelectedItem()));
+        filterRow.add(cmbFilter);
+
+        // ---- Buttons row ------------------------------------------------
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
 
         btnOpen = new JButton("Open…");
         btnPlay = new JButton("Play");
         btnPlay.setEnabled(false);
         btnPlay.setPreferredSize(new Dimension(80, btnPlay.getPreferredSize().height));
+        btnExport = new JButton("Export WAV…");
+        btnExport.setEnabled(false);
 
         buttons.add(btnOpen);
         buttons.add(btnPlay);
+        buttons.add(btnExport);
 
         lblStatus = new JLabel(" ");
         lblStatus.setFont(lblStatus.getFont().deriveFont(Font.PLAIN, 11f));
         lblStatus.setBorder(BorderFactory.createEmptyBorder(2, 2, 0, 2));
 
+        panel.add(filterRow, BorderLayout.NORTH);
         panel.add(buttons,   BorderLayout.CENTER);
         panel.add(lblStatus, BorderLayout.SOUTH);
 
         // ---- Listeners --------------------------------------------------
         btnOpen.addActionListener(e -> openFile());
         btnPlay.addActionListener(e -> togglePlayback());
+        btnExport.addActionListener(e -> exportWav());
 
         return panel;
     }
@@ -177,25 +248,38 @@ public class YmPlayerApp {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Select a YM file");
         chooser.setFileFilter(new FileNameExtensionFilter("YM music files (*.ym)", "ym"));
-
-        Path startDir = Files.isDirectory(DEFAULT_DIR) ? DEFAULT_DIR : Paths.get(".");
-        chooser.setCurrentDirectory(startDir.toFile());
+        chooser.setCurrentDirectory(currentDir.toFile());
 
         if (chooser.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) return;
 
-        stopPlayback();
-
         Path path = chooser.getSelectedFile().toPath();
+
+        // If the user navigated to a different directory, refresh the file list
+        Path parentDir = path.getParent();
+        if (parentDir != null && !parentDir.equals(currentDir)) {
+            currentDir = parentDir;
+            refreshFileList(currentDir);
+        }
+
+        loadAndPlay(path);
+    }
+
+    /** Loads the YM file and immediately starts playback. */
+    private void loadAndPlay(Path path) {
+        stopPlayback();
         try {
             selectedYm   = YmFileParser.parse(path);
             selectedPath = path;
             populateSongInfo();
             btnPlay.setEnabled(true);
+            btnExport.setEnabled(true);
             lblStatus.setText("Loaded: " + path.getFileName());
+            startPlayback();
         } catch (IOException ex) {
             selectedYm   = null;
             selectedPath = null;
             btnPlay.setEnabled(false);
+            btnExport.setEnabled(false);
             JOptionPane.showMessageDialog(frame,
                     "Could not load YM file:\n" + ex.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
@@ -237,6 +321,72 @@ public class YmPlayerApp {
         btnPlay.setText("Play");
         lblStatus.setText(selectedPath != null
                 ? "Finished: " + selectedPath.getFileName() : " ");
+    }
+
+    private void exportWav() {
+        if (selectedYm == null || selectedPath == null) return;
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Save WAV file");
+        chooser.setFileFilter(new FileNameExtensionFilter("WAV audio files (*.wav)", "wav"));
+        String suggested = selectedPath.getFileName().toString()
+                .replaceAll("(?i)\\.ym$", "") + ".wav";
+        chooser.setSelectedFile(new java.io.File(currentDir.toFile(), suggested));
+
+        if (chooser.showSaveDialog(frame) != JFileChooser.APPROVE_OPTION) return;
+
+        Path wavPath = chooser.getSelectedFile().toPath();
+        // Ensure .wav extension
+        if (!wavPath.getFileName().toString().toLowerCase().endsWith(".wav")) {
+            wavPath = wavPath.resolveSibling(wavPath.getFileName() + ".wav");
+        }
+
+        final Path finalWavPath = wavPath;
+        final YmFile ymToExport = selectedYm;
+
+        btnExport.setEnabled(false);
+        lblStatus.setText("Exporting: " + finalWavPath.getFileName() + "…");
+
+        Thread exportThread = new Thread(() -> {
+            try {
+                player.exportWav(ymToExport, finalWavPath);
+                final String done = "Exported: " + finalWavPath.getFileName();
+                SwingUtilities.invokeLater(() -> {
+                    lblStatus.setText(done);
+                    btnExport.setEnabled(true);
+                });
+            } catch (IOException ex) {
+                SwingUtilities.invokeLater(() -> {
+                    JOptionPane.showMessageDialog(frame,
+                            "Export failed:\n" + ex.getMessage(),
+                            "Error", JOptionPane.ERROR_MESSAGE);
+                    lblStatus.setText("Export failed.");
+                    btnExport.setEnabled(true);
+                });
+            }
+        }, "ym-wav-export");
+        exportThread.setDaemon(true);
+        exportThread.start();
+    }
+
+    // -----------------------------------------------------------------------
+    // File list helpers
+    // -----------------------------------------------------------------------
+
+    /**
+     * Repopulates the file list with {@code .ym} files found in {@code dir}.
+     * Files are listed in alphabetical order.
+     */
+    private void refreshFileList(Path dir) {
+        fileListModel.clear();
+        if (!Files.isDirectory(dir)) return;
+        try (Stream<Path> stream = Files.list(dir)) {
+            stream.filter(p -> p.getFileName().toString().toLowerCase().endsWith(".ym"))
+                  .sorted()
+                  .forEach(fileListModel::addElement);
+        } catch (IOException ex) {
+            lblStatus.setText("Cannot list directory: " + ex.getMessage());
+        }
     }
 
     // -----------------------------------------------------------------------
