@@ -1,5 +1,6 @@
 package org.jatari.player;
 
+import org.jatari.player.YmPlayer.HpfOption;
 import org.jatari.player.YmPlayer.LpfOption;
 import org.jatari.ym.format.YmFile;
 import org.jatari.ym.format.YmFileParser;
@@ -70,6 +71,7 @@ public class YmPlayerApp {
     private JButton    btnExport;
     private JLabel     lblStatus;
     private JComboBox<LpfOption>     cmbFilter;
+    private JComboBox<HpfOption>     cmbHpfFilter;
     private JList<Path>              fileList;
     private DefaultListModel<Path>   fileListModel;
 
@@ -203,12 +205,19 @@ public class YmPlayerApp {
 
         // ---- Filter row -------------------------------------------------
         JPanel filterRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        filterRow.add(new JLabel("Filter:"));
+        filterRow.add(new JLabel("Low Pass:"));
         cmbFilter = new JComboBox<>(LpfOption.values());
         cmbFilter.setSelectedItem(LpfOption.OFF);
         cmbFilter.addActionListener(e ->
                 player.setLpfOption((LpfOption) cmbFilter.getSelectedItem()));
         filterRow.add(cmbFilter);
+
+        filterRow.add(new JLabel("  High Pass:"));
+        cmbHpfFilter = new JComboBox<>(HpfOption.values());
+        cmbHpfFilter.setSelectedItem(HpfOption.OFF);
+        cmbHpfFilter.addActionListener(e ->
+                player.setHpfOption((HpfOption) cmbHpfFilter.getSelectedItem()));
+        filterRow.add(cmbHpfFilter);
 
         // ---- Buttons row ------------------------------------------------
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
