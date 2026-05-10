@@ -1,4 +1,4 @@
-package org.jatari.ym;
+package org.jatari.ym.format;
 
 /**
  * Parsed YM file data (YM3!, YM5!, or YM6! format).

@@ -138,6 +138,7 @@ public record Ym2149Processor(Context context, Processor source) implements Defa
 
         /** Advance the simulation to sample {@code t} (inclusive). */
         void advanceTo(long t) {
+            // TODO: reset when advanceTo is called with t < lastTime?
             for (long i = lastTime + 1; i <= t; i++) {
                 // Write all 14 registers when the write-enable pulse is present.
                 if (src.at(14).boolAt(i)) {

@@ -1,9 +1,9 @@
 package org.jatari.main;
 
 import org.jaust.Processor;
-import org.jatari.ym.YmFile;
-import org.jatari.ym.YmFileParser;
-import org.jatari.ym.YmFileProcessor;
+import org.jatari.ym.format.YmFile;
+import org.jatari.ym.format.YmFileParser;
+import org.jatari.ym.format.YmFileProcessor;
 import org.jatari.ym.Ym2149Processor;
 import org.jm2149.vhdl.indexed.Ym2149AudioIndexed;
 

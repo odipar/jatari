@@ -1,5 +1,8 @@
 package org.jatari.ym;
 
+import org.jatari.ym.format.YmFile;
+import org.jatari.ym.format.YmFileParser;
+import org.jatari.ym.format.YmFileProcessor;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;

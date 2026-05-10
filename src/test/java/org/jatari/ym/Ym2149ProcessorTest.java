@@ -1,5 +1,8 @@
 package org.jatari.ym;
 
+import org.jatari.ym.format.YmFile;
+import org.jatari.ym.format.YmFileParser;
+import org.jatari.ym.format.YmFileProcessor;
 import org.jaust.Signal;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +19,7 @@ class Ym2149ProcessorTest {
     private static final Path DATA_DIR = Path.of("data/ym_format");
 
     /** Number of YM clock samples to check in range-validation tests. */
-    private static final int SAMPLES_TO_TEST = 2500;
+    private static final int SAMPLES_TO_TEST = 10_000_000;
 
     // -----------------------------------------------------------------------
     // Structure / metadata

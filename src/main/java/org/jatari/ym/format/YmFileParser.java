@@ -1,4 +1,4 @@
-package org.jatari.ym;
+package org.jatari.ym.format;
 
 import java.io.*;
 import java.nio.file.Files;
