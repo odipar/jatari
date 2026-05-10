@@ -1,81 +1,121 @@
 package org.jatari.dsp;
 
 import org.jaust.Context;
+import org.jaust.Processor;
 import org.jaust.Signal;
 import org.jaust.processor.DefaultProcessor;
+import org.jaust.signal.DoubleSignal;
 import org.jaust.signal.IntSignal;
 import org.jaust.signal.SignalArray;
 import org.jaust.signal.array.DefaultArray;
 
 /**
- * First-order IIR low-pass filter implemented as a jaust {@link DefaultProcessor}.
+ * First-order IIR low-pass filter implemented as a jaust {@link DefaultProcessor}
+ * using the Faust {@code rec} (recursive) operator and the {@code cache} processor.
  *
  * <h2>Filter design</h2>
- * <p>Difference equation: y[n] = β · x[n] + α · y[n–1]
- * where α = exp(–2π · fc / fs) (feedback coefficient)
- * and β = 1 – α (feed-forward coefficient),
- * fc = cutoff frequency in Hz, fs = sample rate in Hz.
+ * <p>Difference equation: y[n] = (1−α) · x[n] + α · y[n−1]
+ * where α = exp(−2π · fc / fs), fc = cutoff frequency in Hz, fs = sample rate in Hz.
+ * When fc = 0, α = 0 and the filter is bypassed (y[n] = x[n]).
  *
- * <h2>Sequential access required</h2>
- * <p>The internal state (y[n–1]) is updated incrementally on each call to
- * {@link IntSignal#intAt(long)}.  Signals must be evaluated in strictly
- * increasing time order (t = 0, 1, 2, …), consistent with the sequential
- * playback loop in {@link org.jatari.player.YmPlayer}.
- *
- * <h2>Type contract</h2>
+ * <h2>Inputs</h2>
  * <ul>
- *   <li><b>Input</b>: one {@link Signal.Type#INT} signal</li>
- *   <li><b>Output</b>: one {@link Signal.Type#INT} signal (filtered)</li>
+ *   <li>Signal 0 ({@link Signal.Type#INT}): audio signal to filter</li>
+ *   <li>Signal 1 ({@link Signal.Type#DOUBLE}): cutoff frequency in Hz
+ *       (may vary per sample; 0 = bypass)</li>
  * </ul>
+ *
+ * <h2>Output</h2>
+ * <ul>
+ *   <li>Signal 0 ({@link Signal.Type#INT}): filtered audio</li>
+ * </ul>
+ *
+ * <h2>Implementation</h2>
+ * <p>The IIR feedback loop is built with {@link Context#rec(Processor, Processor)}.
+ * A {@link Context#cache(Processor)} processor is placed inside the feedback path
+ * so that each sample's y[n−1] is computed only once, keeping evaluation O(1)
+ * per sample without mutable state in this class.
  */
 public class LowPassFilter implements DefaultProcessor {
 
-    private final Context context;
-    private final double  alpha;   // IIR feedback coefficient  = exp(−2π·fc/fs)
-    private final double  beta;    // feed-forward coefficient  = 1 − α
+    private final Context  context;
+    private final Processor recFilter;
 
     /**
-     * Constructs a first-order IIR low-pass filter.
+     * Constructs a first-order IIR low-pass filter that accepts a per-sample
+     * cutoff-frequency signal as its second input.
      *
-     * @param context  jaust context whose {@link Context#frequency()} is the
-     *                 sample rate in Hz
-     * @param cutoffHz desired −3 dB cutoff frequency in Hz
+     * @param context jaust context whose {@link Context#frequency()} is the
+     *                sample rate in Hz
      */
-    public LowPassFilter(Context context, double cutoffHz) {
+    public LowPassFilter(Context context) {
         this.context = context;
-        this.alpha   = Math.exp(-2.0 * Math.PI * cutoffHz / context.frequency());
-        this.beta    = 1.0 - alpha;
+
+        // p1: (y_prev: DOUBLE, x: INT, alpha: DOUBLE) → y: DOUBLE
+        // y[n] = (1 − alpha[n]) · x[n] + alpha[n] · y[n−1]
+        DefaultProcessor lpfStep = new DefaultProcessor() {
+            @Override public Context context() { return LowPassFilter.this.context; }
+            @Override public Signal.Type[] inType() {
+                return new Signal.Type[]{Signal.Type.DOUBLE, Signal.Type.INT, Signal.Type.DOUBLE};
+            }
+            @Override public Signal.Type[] outType() { return new Signal.Type[]{Signal.Type.DOUBLE}; }
+
+            @Override
+            public SignalArray apply(SignalArray inputs) {
+                DoubleSignal yPrev = (DoubleSignal) inputs.at(0);
+                IntSignal    x     = (IntSignal)    inputs.at(1);
+                DoubleSignal alpha = (DoubleSignal)  inputs.at(2);
+                return DefaultArray.a(new DoubleSignal() {
+                    @Override public Context context() { return LowPassFilter.this.context; }
+                    @Override public double doubleAt(long t) {
+                        double a = alpha.doubleAt(t);
+                        return (1.0 - a) * x.intAt(t) + a * yPrev.doubleAt(t);
+                    }
+                });
+            }
+        };
+
+        // p2 = cache(wire(DOUBLE)): the cache inside the feedback path ensures
+        // that y[n−1] is resolved from the cache (O(1)) rather than recursing
+        // all the way back to t = 0.
+        Processor cachedWire = context.cache(context.wire(Signal.Type.DOUBLE));
+
+        // rec(lpfStep, cachedWire): external inputs = (x: INT, alpha: DOUBLE)
+        // Wrap the output with cache so multiple consumers see the same value.
+        this.recFilter = context.cache(context.rec(lpfStep, cachedWire));
     }
 
     @Override public Context       context()  { return context; }
-    @Override public Signal.Type[] inType()   { return new Signal.Type[]{Signal.Type.INT}; }
+    @Override public Signal.Type[] inType()   { return new Signal.Type[]{Signal.Type.INT, Signal.Type.DOUBLE}; }
     @Override public Signal.Type[] outType()  { return new Signal.Type[]{Signal.Type.INT}; }
 
     /**
-     * Wraps the single input INT signal with the IIR low-pass filter and
-     * returns a filtered INT signal.
+     * Applies the low-pass filter to the audio signal.
      *
-     * @param inputs a {@link SignalArray} containing exactly one INT signal
+     * @param inputs {@link SignalArray} with signal 0 = INT audio,
+     *               signal 1 = DOUBLE cutoff frequency in Hz
      * @return a {@link SignalArray} containing one filtered INT signal
      */
     @Override
     public SignalArray apply(SignalArray inputs) {
-        Signal input      = inputs.at(0);
-        double localAlpha = alpha;
-        double localBeta  = beta;
-        // y[n-1]: mutable state updated sequentially with each sample query
-        double[] prevY = {0.0};
+        IntSignal    x        = (IntSignal)    inputs.at(0);
+        DoubleSignal cutoffHz = (DoubleSignal) inputs.at(1);
+        double       fs       = context.frequency();
 
-        IntSignal filtered = new IntSignal() {
+        // Convert cutoff Hz → IIR coefficient α; 0 Hz → α = 0 (bypass: y[n] = x[n])
+        DoubleSignal alpha = new DoubleSignal() {
             @Override public Context context() { return LowPassFilter.this.context; }
-
-            @Override
-            public int intAt(long t) {
-                double x = input.intAt(t);
-                prevY[0] = localBeta * x + localAlpha * prevY[0];
-                return (int) prevY[0];
+            @Override public double doubleAt(long t) {
+                double fc = cutoffHz.doubleAt(t);
+                return fc <= 0.0 ? 0.0 : Math.exp(-2.0 * Math.PI * fc / fs);
             }
         };
-        return DefaultArray.a(filtered);
+
+        SignalArray  recOut  = recFilter.apply(DefaultArray.a(x, alpha));
+        DoubleSignal yDouble = (DoubleSignal) recOut.at(0);
+        return DefaultArray.a(new IntSignal() {
+            @Override public Context context() { return LowPassFilter.this.context; }
+            @Override public int intAt(long t) { return (int) yDouble.doubleAt(t); }
+        });
     }
 }

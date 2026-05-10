@@ -1,17 +1,22 @@
 package org.jatari.player;
 
 import org.jatari.atari.YmMixer;
+import org.jatari.dsp.HighPassFilter;
 import org.jatari.dsp.LowPassFilter;
 import org.jatari.ym.Ym2149Processor;
 import org.jatari.ym.format.YmFile;
 import org.jatari.ym.format.YmFileParser;
 import org.jatari.ym.format.YmFileProcessor;
+import org.jaust.Context;
 import org.jaust.Processor;
 import org.jaust.Signal;
 import org.jaust.context.DefaultContext;
+import org.jaust.signal.DoubleSignal;
 import org.jaust.signal.IntSignal;
 import org.jaust.signal.SignalArray;
 import org.jaust.signal.array.DefaultArray;
+
+import java.util.function.IntSupplier;
 
 import javax.sound.sampled.*;
 import java.io.IOException;
@@ -30,18 +35,22 @@ import java.nio.file.Path;
  *   → Ym2149Processor (2 MHz, 3 INT signals: chA / chB / chC)
  *     → YmMixer (2 MHz, 1 INT signal: mixed)
  *       → box-filter downsample → 44100 Hz downsampled INT signal
- *         → [optional] LowPassFilter (jaust IIR, 1 INT)
- *           → javax.sound.sampled SourceDataLine (16-bit LE mono signed PCM)
+ *         → [optional] LowPassFilter  (jaust IIR rec/cache, 1 INT)
+ *           → [optional] HighPassFilter (jaust IIR rec/cache, 1 INT)
+ *             → javax.sound.sampled SourceDataLine (16-bit LE mono signed PCM)
  * </pre>
  *
  * <p>Playback runs on a background daemon thread.  Call {@link #play(Path)} to
  * start and {@link #stop()} to end playback.  A {@link Listener} can be
  * registered to receive progress and stop events for UI updates.
  *
- * <h2>Low-pass filter</h2>
- * <p>An optional first-order IIR low-pass filter ({@link LowPassFilter}) can be
- * applied at 44 100 Hz after the box-filter downsample.  Select the desired
- * cutoff with {@link #setLpfOption(LpfOption)}.
+ * <h2>Filters</h2>
+ * <p>An optional first-order IIR low-pass filter ({@link LowPassFilter}) and/or
+ * high-pass filter ({@link HighPassFilter}) can be applied at 44 100 Hz after the
+ * box-filter downsample.  Both filters accept a per-sample cutoff-frequency signal
+ * so that their settings can be changed while the song is playing without restarting
+ * playback.  Select the desired cutoff with {@link #setLpfOption(LpfOption)} or
+ * {@link #setHpfOption(HpfOption)}.
  *
  * <h2>WAV export</h2>
  * <p>Use {@link #exportWav(YmFile, Path)} to render a full song (one loop) to
@@ -56,7 +65,7 @@ public class YmPlayer {
     private static final int BUFFER_SAMPLES = 2048;
 
     // -----------------------------------------------------------------------
-    // Low-pass filter options
+    // Filter options
     // -----------------------------------------------------------------------
 
     /**
@@ -85,6 +94,32 @@ public class YmPlayer {
         @Override public String toString() { return label; }
     }
 
+    /**
+     * Selectable cutoff frequencies for the optional IIR high-pass filter.
+     */
+    public enum HpfOption {
+        OFF    ("No filter",   0),
+        F4KHZ  ( "4 kHz",  4_000),
+        F6KHZ  ( "6 kHz",  6_000),
+        F8KHZ  ( "8 kHz",  8_000),
+        F10KHZ ("10 kHz", 10_000),
+        F12KHZ ("12 kHz", 12_000),
+        F16KHZ ("16 kHz", 16_000),
+        F20KHZ ("20 kHz", 20_000);
+
+        /** Human-readable label shown in the UI. */
+        public final String label;
+        /** Cutoff frequency in Hz; 0 means filter is disabled. */
+        public final int    cutoffHz;
+
+        HpfOption(String label, int cutoffHz) {
+            this.label    = label;
+            this.cutoffHz = cutoffHz;
+        }
+
+        @Override public String toString() { return label; }
+    }
+
     // -----------------------------------------------------------------------
     // State
     // -----------------------------------------------------------------------
@@ -97,6 +132,7 @@ public class YmPlayer {
     private volatile SourceDataLine audioLine;
 
     private volatile LpfOption lpfOption = LpfOption.OFF;
+    private volatile HpfOption hpfOption = HpfOption.OFF;
     private Listener           listener;
 
     // -----------------------------------------------------------------------
@@ -130,12 +166,24 @@ public class YmPlayer {
     public LpfOption getLpfOption() { return lpfOption; }
 
     /**
-     * Sets the low-pass filter option applied during playback and WAV export.
-     * Takes effect on the next call to {@link #play(Path)} or
-     * {@link #exportWav(YmFile, Path)}.
+     * Sets the low-pass filter cutoff.  Takes effect immediately — the signal
+     * pipeline reads this value on every sample, so changes are heard without
+     * restarting playback.
      */
     public void setLpfOption(LpfOption option) {
         this.lpfOption = option;
+    }
+
+    /** Returns the currently selected {@link HpfOption}. */
+    public HpfOption getHpfOption() { return hpfOption; }
+
+    /**
+     * Sets the high-pass filter cutoff.  Takes effect immediately — the signal
+     * pipeline reads this value on every sample, so changes are heard without
+     * restarting playback.
+     */
+    public void setHpfOption(HpfOption option) {
+        this.hpfOption = option;
     }
 
     // -----------------------------------------------------------------------
@@ -152,10 +200,11 @@ public class YmPlayer {
     public synchronized void play(Path ymPath) throws IOException {
         stop();
         YmFile ym = YmFileParser.parse(ymPath);
-        LpfOption opt = lpfOption;
         playerThread = new Thread(() -> {
             try {
-                runPlayback(ym, opt);
+                // The signal pipeline reads lpfOption / hpfOption on every sample,
+                // so filter changes take effect immediately without restarting.
+                runPlayback(ym);
             } catch (LineUnavailableException e) {
                 System.err.println("Audio line unavailable: " + e.getMessage());
             }
@@ -204,7 +253,7 @@ public class YmPlayer {
 
     /**
      * Renders a full song loop to a 16-bit mono 44 100 Hz WAV file.
-     * The current {@link #getLpfOption()} is used for filtering.
+     * The current {@link #getLpfOption()} and {@link #getHpfOption()} are used.
      *
      * <p>This method blocks until rendering is complete.
      * It does <b>not</b> interact with the playback thread.
@@ -214,20 +263,32 @@ public class YmPlayer {
      * @throws IOException on file I/O errors
      */
     public void exportWav(YmFile ym, Path wavPath) throws IOException {
-        exportWav(ym, wavPath, lpfOption);
+        // Snapshot current filter options so export is stable
+        int lpfHz = lpfOption.cutoffHz;
+        int hpfHz = hpfOption.cutoffHz;
+        exportWav(ym, wavPath, () -> lpfHz, () -> hpfHz);
     }
 
     /**
      * Renders a full song loop to a 16-bit mono 44 100 Hz WAV file using the
-     * given {@link LpfOption}.
+     * given filter options.
      *
      * @param ym      parsed YM file to render
      * @param wavPath destination WAV file path (created or overwritten)
-     * @param opt     low-pass filter option
+     * @param lpfOpt  low-pass filter option
+     * @param hpfOpt  high-pass filter option
      * @throws IOException on file I/O errors
      */
-    public void exportWav(YmFile ym, Path wavPath, LpfOption opt) throws IOException {
-        Signal outputSignal = buildOutputSignal(ym, opt);
+    public void exportWav(YmFile ym, Path wavPath, LpfOption lpfOpt, HpfOption hpfOpt)
+            throws IOException {
+        int lpfHz = lpfOpt.cutoffHz;
+        int hpfHz = hpfOpt.cutoffHz;
+        exportWav(ym, wavPath, () -> lpfHz, () -> hpfHz);
+    }
+
+    private void exportWav(YmFile ym, Path wavPath, IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz)
+            throws IOException {
+        Signal outputSignal = buildOutputSignal(ym, lpfCutoffHz, hpfCutoffHz);
 
         long totalSamples = (long) ((double) ym.numFrames() * SAMPLE_RATE / ym.frameRate());
         long dataBytes    = totalSamples * 2L;  // 16-bit = 2 bytes per sample
@@ -258,17 +319,22 @@ public class YmPlayer {
     // -----------------------------------------------------------------------
 
     /**
-     * Builds the full output signal chain for a given YM file and LPF option.
+     * Builds the full output signal chain for a given YM file.
      *
      * <p>Pipeline:
      * <pre>
      *   YmFileProcessor → Ym2149Processor → YmMixer → box-filter downsample
-     *     → [LowPassFilter]
+     *     → [LowPassFilter] → [HighPassFilter]
      * </pre>
+     *
+     * <p>The {@code lpfCutoffHz} and {@code hpfCutoffHz} suppliers are
+     * sampled on every audio tick, so filter settings can change in real-time.
+     * Returning 0 from a supplier disables that filter.
      *
      * @return a {@link Signal} at {@value SAMPLE_RATE} Hz (INT, 16-bit range)
      */
-    /* package-private for testability */ Signal buildOutputSignal(YmFile ym, LpfOption opt) {
+    /* package-private for testability */
+    Signal buildOutputSignal(YmFile ym, IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz) {
         // ---- Build 2 MHz DSP pipeline ----------------------------------------
         Processor fileProc = YmFileProcessor.of(ym);
         Processor ymProc   = Ym2149Processor.of(fileProc);
@@ -277,21 +343,15 @@ public class YmPlayer {
         YmMixer mixer     = new YmMixer(new DefaultContext(Ym2149Processor.YM_CLOCK));
         SignalArray mixOut = mixer.apply(ymOut);
         Signal mixSignal  = mixOut.at(0);   // single INT at 2 MHz
-        // ---- Optional jaust IIR low-pass filter --------------------------------
-        if (opt != LpfOption.OFF) {
-            System.out.println("FILTER ON " + opt);
-            LowPassFilter lpf    = new LowPassFilter(mixSignal.context(), opt.cutoffHz);
-            SignalArray   lpfOut = lpf.apply(DefaultArray.a(mixSignal));
-            mixSignal = lpfOut.at(0);
-        }
+
         // ---- Box-filter downsample to 44 100 Hz --------------------------------
         final long ymClock    = Ym2149Processor.YM_CLOCK;
         DefaultContext ctx44k = new DefaultContext(SAMPLE_RATE);
 
         final var mm = mixSignal;
-        
+
         IntSignal downsampled = new IntSignal() {
-            @Override public org.jaust.Context context() { return ctx44k; }
+            @Override public Context context() { return ctx44k; }
             @Override public int intAt(long t) {
                 long tymStart = t * ymClock / SAMPLE_RATE;
                 long tymEnd   = (t + 1) * ymClock / SAMPLE_RATE;
@@ -303,16 +363,37 @@ public class YmPlayer {
                 return (count > 0) ? (int) (sum / count) : 0;
             }
         };
-        
-        return downsampled;
+
+        // ---- Optional IIR low-pass filter (rec + cache, dynamic cutoff) --------
+        // The cutoff signal reads the supplier on every sample; returning 0 bypasses.
+        DoubleSignal lpfCutoff = new DoubleSignal() {
+            @Override public Context context() { return ctx44k; }
+            @Override public double doubleAt(long t) { return lpfCutoffHz.getAsInt(); }
+        };
+        LowPassFilter lpf = new LowPassFilter(ctx44k);
+        Signal lpfSignal = lpf.apply(DefaultArray.a(downsampled, lpfCutoff)).at(0);
+
+        // ---- Optional IIR high-pass filter (rec + cache, dynamic cutoff) -------
+        DoubleSignal hpfCutoff = new DoubleSignal() {
+            @Override public Context context() { return ctx44k; }
+            @Override public double doubleAt(long t) { return hpfCutoffHz.getAsInt(); }
+        };
+        HighPassFilter hpf = new HighPassFilter(ctx44k);
+        Signal hpfSignal = hpf.apply(DefaultArray.a(lpfSignal, hpfCutoff)).at(0);
+
+        return hpfSignal;
     }
 
     // -----------------------------------------------------------------------
     // Internal playback loop
     // -----------------------------------------------------------------------
 
-    private void runPlayback(YmFile ym, LpfOption opt) throws LineUnavailableException {
-        Signal outputSignal = buildOutputSignal(ym, opt);
+    private void runPlayback(YmFile ym) throws LineUnavailableException {
+        // Suppliers read the volatile filter fields on every sample tick,
+        // so changes from the UI take effect immediately without restarting.
+        Signal outputSignal = buildOutputSignal(ym,
+                () -> lpfOption.cutoffHz,
+                () -> hpfOption.cutoffHz);
 
         // ---- Audio line -------------------------------------------------
         AudioFormat format = new AudioFormat(SAMPLE_RATE, 16, 1, true, false);
