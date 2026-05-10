@@ -32,9 +32,11 @@ import org.jaust.signal.array.DefaultArray;
  *
  * <h2>Implementation</h2>
  * <p>The IIR feedback loop is built with {@link Context#rec(Processor, Processor)}.
- * A {@link Context#cache(Processor)} processor is placed inside the feedback path
- * so that each sample's y[n−1] is computed only once, keeping evaluation O(1)
- * per sample without mutable state in this class.
+ * The {@link Context#cache(Processor)} wrapper is placed on the body processor
+ * <em>inside</em> {@code rec}, so the feedback signal references the cached output
+ * of each completed sample.  This guarantees that x[n] is sampled exactly once per
+ * time tick and that computing y[n] does not re-enter the computation of y[n−1],
+ * keeping evaluation O(1) per sample without mutable state in this class.
  */
 public class LowPassFilter implements DefaultProcessor {
 
@@ -75,14 +77,16 @@ public class LowPassFilter implements DefaultProcessor {
             }
         };
 
-        // p2 = cache(wire(DOUBLE)): the cache inside the feedback path ensures
-        // that y[n−1] is resolved from the cache (O(1)) rather than recursing
-        // all the way back to t = 0.
+        // p2 = cache(wire(DOUBLE)): ensures y[n−1] is not re-evaluated if lpfStep
+        // reads it more than once in a single tick.
         Processor cachedWire = context.cache(context.wire(Signal.Type.DOUBLE));
 
-        // rec(lpfStep, cachedWire): external inputs = (x: INT, alpha: DOUBLE)
-        // Wrap the output with cache so multiple consumers see the same value.
-        this.recFilter = context.cache(context.rec(lpfStep, cachedWire));
+        // rec(cache(lpfStep), cachedWire): the cache wraps lpfStep *inside* the
+        // rec loop so that RecSignal.rec points to the cached output.  When the
+        // feedback path reads y[n−1] it therefore always hits the cache rather
+        // than re-entering lpfStep — keeping evaluation O(1) per sample and
+        // ensuring x[n] is sampled exactly once per time tick.
+        this.recFilter = context.rec(context.cache(lpfStep), cachedWire);
     }
 
     @Override public Context       context()  { return context; }
