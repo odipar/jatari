@@ -7,6 +7,7 @@ import org.jaust.signal.DoubleSignal;
 import org.jaust.signal.IntSignal;
 import org.jaust.signal.SignalArray;
 import org.jaust.signal.array.DefaultArray;
+import org.jaust.signal.cache.IntCache;
 
 /**
  * First-order IIR high-pass filter implemented as a jaust {@link DefaultProcessor},
@@ -59,6 +60,17 @@ public class HighPassFilter implements DefaultProcessor {
     /**
      * Applies the high-pass filter to the audio signal.
      *
+     * <p>Both {@code x} and the inner LPF are evaluated unconditionally on
+     * every tick so that the inner LPF's rec cache stays current even while
+     * the filter is in bypass mode (fc = 0).  Without this, switching from
+     * bypass to active after N ticks would force the inner LPF to recurse
+     * N levels deep to fill in its missing history, overflowing the stack.
+     *
+     * <p>The returned signal is wrapped in an {@link IntCache} so that reading
+     * it multiple times at the same tick (e.g. when the HPF output is used
+     * as input to another rec-based processor) does not re-enter the
+     * computation.
+     *
      * @param inputs {@link SignalArray} with signal 0 = INT audio,
      *               signal 1 = DOUBLE cutoff frequency in Hz
      * @return a {@link SignalArray} containing one filtered INT signal
@@ -69,25 +81,32 @@ public class HighPassFilter implements DefaultProcessor {
         DoubleSignal cutoffHz = (DoubleSignal) inputs.at(1);
 
         // Compute LPF with the same inputs; y_hpf = x - y_lpf.
-        // The x signal passed to the inner LPF is the same reference, so when
-        // the LPF evaluates x at the same t it hits the DoubleCache inside
-        // LowPassFilter (the outer cache wrapping the rec output).
         SignalArray lpfOut = lpf.apply(inputs);
         IntSignal   yLpf   = (IntSignal) lpfOut.at(0);
 
-        return DefaultArray.a(new IntSignal() {
+        // Wrap in an IntCache so that the output can be read more than once
+        // per tick without re-entering the computation.
+        return DefaultArray.a(new IntCache(new IntSignal() {
             @Override public Context context() { return HighPassFilter.this.context; }
 
             @Override
             public int intAt(long t) {
-                // Evaluate cutoff once to avoid redundant signal reads.
+                // Evaluate x first so that the upstream cache (e.g. the outer
+                // LPF's DoubleCache) is already at tick t when the inner LPF
+                // reads it as part of its own computation.
+                int xVal = x.intAt(t);
+
+                // Always evaluate the inner LPF – even during bypass – so that
+                // its rec cache is advanced to t on every tick.  Skipping this
+                // call while fc = 0 would leave the cache stale; the first
+                // active-mode sample would then trigger O(t) recursion to
+                // rebuild the history, causing a StackOverflowError.
+                int lpfVal = yLpf.intAt(t);
+
                 double fc = cutoffHz.doubleAt(t);
-                if (fc <= 0.0) return x.intAt(t);
-                // x.intAt(t) is evaluated once here; the inner LPF's subsequent
-                // evaluation of the same signal at t hits the DoubleCache in
-                // LowPassFilter, keeping the total work O(1) per sample.
-                return x.intAt(t) - yLpf.intAt(t);
+                if (fc <= 0.0) return xVal;
+                return xVal - lpfVal;
             }
-        });
+        }));
     }
 }
