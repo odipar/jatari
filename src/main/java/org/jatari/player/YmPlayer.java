@@ -267,7 +267,7 @@ public class YmPlayer {
      *
      * @return a {@link Signal} at {@value SAMPLE_RATE} Hz (INT, 16-bit range)
      */
-    Signal buildOutputSignal(YmFile ym, LpfOption opt) {
+    /* package-private for testability */ Signal buildOutputSignal(YmFile ym, LpfOption opt) {
         // ---- Build 2 MHz DSP pipeline ----------------------------------------
         Processor fileProc = YmFileProcessor.of(ym);
         Processor ymProc   = Ym2149Processor.of(fileProc);
