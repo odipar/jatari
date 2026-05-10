@@ -63,7 +63,7 @@ class StartDemo {
         ym2149.setMixer(false, false, false, true, true, true);
 
         for (int i = 0; i < 1_000_000_000; i++) {
-            ym2149.risingEdge(true, false, true, false, false, 0);
+            ym2149.risingEdge(true, true, true, false, false, 0);
             if ((i % 100_000_000) == 0) {
                 System.out.println(i);
                 System.out.printf("Sample %d: chA=%d chB=%d chC=%d %n",
