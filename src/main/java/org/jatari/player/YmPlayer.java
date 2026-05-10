@@ -34,9 +34,9 @@ import java.nio.file.Path;
  * YmFileProcessor (frameRate Hz, 15 signals)
  *   → Ym2149Processor (2 MHz, 3 INT signals: chA / chB / chC)
  *     → YmMixer (2 MHz, 1 INT signal: mixed)
- *       → box-filter downsample → 44100 Hz downsampled INT signal
- *         → [optional] LowPassFilter  (jaust IIR rec/cache, 1 INT)
- *           → [optional] HighPassFilter (jaust IIR rec/cache, 1 INT)
+ *       → [optional] LowPassFilter  (2 MHz, jaust IIR rec/cache, 1 INT)
+ *         → [optional] HighPassFilter (2 MHz, jaust IIR rec/cache, 1 INT)
+ *           → box-filter downsample → 44100 Hz downsampled INT signal
  *             → javax.sound.sampled SourceDataLine (16-bit LE mono signed PCM)
  * </pre>
  *
@@ -46,7 +46,7 @@ import java.nio.file.Path;
  *
  * <h2>Filters</h2>
  * <p>An optional first-order IIR low-pass filter ({@link LowPassFilter}) and/or
- * high-pass filter ({@link HighPassFilter}) can be applied at 44 100 Hz after the
+ * high-pass filter ({@link HighPassFilter}) can be applied at 2 MHz before the
  * box-filter downsample.  Both filters accept a per-sample cutoff-frequency signal
  * so that their settings can be changed while the song is playing without restarting
  * playback.  Select the desired cutoff with {@link #setLpfOption(LpfOption)} or
@@ -323,8 +323,8 @@ public class YmPlayer {
      *
      * <p>Pipeline:
      * <pre>
-     *   YmFileProcessor → Ym2149Processor → YmMixer → box-filter downsample
-     *     → [LowPassFilter] → [HighPassFilter]
+     *   YmFileProcessor → Ym2149Processor → YmMixer
+     *     → [LowPassFilter] → [HighPassFilter] → box-filter downsample
      * </pre>
      *
      * <p>The {@code lpfCutoffHz} and {@code hpfCutoffHz} suppliers are
@@ -340,15 +340,33 @@ public class YmPlayer {
         Processor ymProc   = Ym2149Processor.of(fileProc);
         SignalArray ymOut  = ymProc.apply();
 
-        YmMixer mixer     = new YmMixer(new DefaultContext(Ym2149Processor.YM_CLOCK));
+        DefaultContext ctx2m = new DefaultContext(Ym2149Processor.YM_CLOCK);
+        YmMixer mixer     = new YmMixer(ctx2m);
         SignalArray mixOut = mixer.apply(ymOut);
         Signal mixSignal  = mixOut.at(0);   // single INT at 2 MHz
+
+        // ---- Optional IIR low-pass filter at 2 MHz (rec + cache, dynamic cutoff) ----
+        // The cutoff signal reads the supplier on every sample; returning 0 bypasses.
+        DoubleSignal lpfCutoff = new DoubleSignal() {
+            @Override public Context context() { return ctx2m; }
+            @Override public double doubleAt(long t) { return lpfCutoffHz.getAsInt(); }
+        };
+        LowPassFilter lpf = new LowPassFilter(ctx2m);
+        Signal lpfSignal = lpf.apply(DefaultArray.a(mixSignal, lpfCutoff)).at(0);
+
+        // ---- Optional IIR high-pass filter at 2 MHz (rec + cache, dynamic cutoff) ---
+        DoubleSignal hpfCutoff = new DoubleSignal() {
+            @Override public Context context() { return ctx2m; }
+            @Override public double doubleAt(long t) { return hpfCutoffHz.getAsInt(); }
+        };
+        HighPassFilter hpf = new HighPassFilter(ctx2m);
+        Signal hpfSignal = hpf.apply(DefaultArray.a(lpfSignal, hpfCutoff)).at(0);
 
         // ---- Box-filter downsample to 44 100 Hz --------------------------------
         final long ymClock    = Ym2149Processor.YM_CLOCK;
         DefaultContext ctx44k = new DefaultContext(SAMPLE_RATE);
 
-        final var mm = mixSignal;
+        final var filteredSignal = hpfSignal;
 
         IntSignal downsampled = new IntSignal() {
             @Override public Context context() { return ctx44k; }
@@ -358,30 +376,13 @@ public class YmPlayer {
                 long sum   = 0;
                 long count = tymEnd - tymStart;
                 for (long tym = tymStart; tym < tymEnd; tym++) {
-                    sum += mm.intAt(tym);
+                    sum += filteredSignal.intAt(tym);
                 }
                 return (count > 0) ? (int) (sum / count) : 0;
             }
         };
 
-        // ---- Optional IIR low-pass filter (rec + cache, dynamic cutoff) --------
-        // The cutoff signal reads the supplier on every sample; returning 0 bypasses.
-        DoubleSignal lpfCutoff = new DoubleSignal() {
-            @Override public Context context() { return ctx44k; }
-            @Override public double doubleAt(long t) { return lpfCutoffHz.getAsInt(); }
-        };
-        LowPassFilter lpf = new LowPassFilter(ctx44k);
-        Signal lpfSignal = lpf.apply(DefaultArray.a(downsampled, lpfCutoff)).at(0);
-
-        // ---- Optional IIR high-pass filter (rec + cache, dynamic cutoff) -------
-        DoubleSignal hpfCutoff = new DoubleSignal() {
-            @Override public Context context() { return ctx44k; }
-            @Override public double doubleAt(long t) { return hpfCutoffHz.getAsInt(); }
-        };
-        HighPassFilter hpf = new HighPassFilter(ctx44k);
-        Signal hpfSignal = hpf.apply(DefaultArray.a(lpfSignal, hpfCutoff)).at(0);
-
-        return hpfSignal;
+        return downsampled;
     }
 
     // -----------------------------------------------------------------------
