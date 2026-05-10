@@ -1,15 +1,22 @@
 package org.jatari.main;
 
-import org.jaust.Processor;
+import org.jatari.player.YmPlayerApp;
 import org.jatari.ym.format.YmFile;
 import org.jatari.ym.format.YmFileParser;
 import org.jatari.ym.format.YmFileProcessor;
 import org.jatari.ym.Ym2149Processor;
+import org.jaust.Processor;
 import org.jm2149.vhdl.indexed.Ym2149AudioIndexed;
 
 import java.nio.file.Path;
 
 public class Start {
+    public static void main(String[] args) throws Exception {
+        YmPlayerApp.main(args);
+    }
+}
+
+class StartDemo {
     public static void main(String[] args) throws Exception {
         // --- YM file processor demo ---
         Path ymPath = Path.of("data/ym_format/capture.ym");
