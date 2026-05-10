@@ -14,19 +14,29 @@ import org.jm2149.vhdl.indexed.Ym2149AudioIndexed;
  * A jaust {@link Processor} that drives a cycle-accurate {@link Ym2149AudioIndexed}
  * simulation and exposes the three channel outputs as jaust signals.
  *
- * <h2>Input (source processor)</h2>
- * <p>Accepts a source {@link Processor} with <b>15 outputs</b> running at the
- * YM file frame rate (typically 50 Hz):
+ * <h2>YM-file mode (default)</h2>
+ * <p>Created via {@link #of(Processor)}.  Accepts a source with <b>15 outputs</b>
+ * at the YM file frame rate (typically 50 Hz):
  * <ul>
  *   <li>Signals 0–13: INT values for YM2149 registers R0–R13</li>
- *   <li>Signal 14: BOOL write-enable ({@code true} = write all registers to chip)</li>
+ *   <li>Signal 14: BOOL write-enable ({@code true} = write all 14 registers)</li>
  * </ul>
  * <p>The source is resampled from its frequency up to the YM2149 clock frequency
- * ({@value YM_CLOCK} Hz) using the jaust {@code resample} combinator.  At
- * non-write positions the write-enable is {@code false} and register values are
- * zero (zero-stuffing); the chip advances without a register update at those steps.
+ * ({@value YM_CLOCK} Hz) using the jaust {@code resample} combinator.
  *
- * <h2>Output signals</h2>
+ * <h2>PSG-capture mode</h2>
+ * <p>Created via {@link #ofPsg(Processor)}.  Accepts a source with <b>3 outputs</b>
+ * already running at {@value YM_CLOCK} Hz (e.g. from
+ * {@code org.jatari.psg.PsgCaptureProcessor}):
+ * <ul>
+ *   <li>Signal 0: BOOL write-enable</li>
+ *   <li>Signal 1: INT register number (0–13)</li>
+ *   <li>Signal 2: INT register value (0–255)</li>
+ * </ul>
+ * <p>Each write-enable pulse writes exactly <em>one</em> register to the chip
+ * rather than all 14.
+ *
+ * <h2>Output signals (both modes)</h2>
  * <p>The processor has <b>zero inputs</b> and <b>3 INT outputs</b> at
  * {@value YM_CLOCK} Hz:
  * <ul>
@@ -37,14 +47,15 @@ import org.jm2149.vhdl.indexed.Ym2149AudioIndexed;
  *
  * <h2>Usage</h2>
  * <pre>{@code
+ * // YM-file mode
  * YmFile ym = YmFileParser.parse(Path.of("music.ym"));
  * Processor fileProc = YmFileProcessor.of(ym);       // 15 signals @ 50 Hz
- * Processor ymProc   = Ym2149Processor.of(fileProc); // 3 INT signals @ 250 kHz
+ * Processor ymProc   = Ym2149Processor.of(fileProc); // 3 INT signals @ 2 MHz
  *
- * SignalArray out = ymProc.apply();
- * int chA = out.at(0).intAt(1000); // channel A DAC index at cycle 1000
- * int chB = out.at(1).intAt(1000);
- * int chC = out.at(2).intAt(1000);
+ * // PSG-capture mode
+ * PsgCaptureFile cap = PsgCaptureParser.parse(Path.of("capture.csv.zip"));
+ * Processor psgProc  = PsgCaptureProcessor.of(cap);     // 3 signals @ 2 MHz
+ * Processor ymProc   = Ym2149Processor.ofPsg(psgProc);  // 3 INT signals @ 2 MHz
  * }</pre>
  *
  * <h2>Sequential evaluation</h2>
@@ -55,7 +66,8 @@ import org.jm2149.vhdl.indexed.Ym2149AudioIndexed;
  * processed sample returns the cached value for the last processed sample and
  * does not rewind the simulation.
  */
-public record Ym2149Processor(Context context, Processor source) implements DefaultProcessor {
+public record Ym2149Processor(Context context, Processor source, boolean psgMode)
+        implements DefaultProcessor {
 
     /** YM2149 chip clock frequency in Hz. */
     public static final long YM_CLOCK = 2_000_000;
@@ -65,14 +77,33 @@ public record Ym2149Processor(Context context, Processor source) implements Defa
 
     /**
      * Creates a {@link Ym2149Processor} that resamples {@code source} to
-     * {@value YM_CLOCK} Hz and drives the chip simulation.
+     * {@value YM_CLOCK} Hz and drives the chip simulation (YM-file mode).
      *
      * @param source processor with 15 outputs (14 INT registers + 1 BOOL write-enable)
      *               at any source frequency lower than {@value YM_CLOCK} Hz
      * @return a new processor at {@value YM_CLOCK} Hz with 3 INT outputs
      */
     public static Processor of(Processor source) {
-        return new Ym2149Processor(new DefaultContext(YM_CLOCK), source);
+        return new Ym2149Processor(new DefaultContext(YM_CLOCK), source, false);
+    }
+
+    /**
+     * Creates a {@link Ym2149Processor} for PSG-capture mode.
+     *
+     * <p>The {@code source} must already run at {@value YM_CLOCK} Hz and
+     * provide exactly 3 signals:
+     * <ol>
+     *   <li>BOOL write-enable</li>
+     *   <li>INT register number (0–13)</li>
+     *   <li>INT register value (0–255)</li>
+     * </ol>
+     * Each write-enable pulse writes a single register to the chip.
+     *
+     * @param source processor with 3 outputs at {@value YM_CLOCK} Hz
+     * @return a new processor at {@value YM_CLOCK} Hz with 3 INT outputs
+     */
+    public static Processor ofPsg(Processor source) {
+        return new Ym2149Processor(new DefaultContext(YM_CLOCK), source, true);
     }
 
     public Signal.Type[] inType()  { return new Signal.Type[]{}; }
@@ -80,7 +111,28 @@ public record Ym2149Processor(Context context, Processor source) implements Defa
     public Signal.Type[] outType() { return OUT_TYPES.clone(); }
 
     public SignalArray apply(SignalArray in) {
-        // Resample the 15-signal source up to YM_CLOCK Hz.
+        if (psgMode) {
+            // PSG-capture mode: source is already at YM_CLOCK Hz; each write-enable
+            // pulse writes a single register (not all 14).
+            SignalArray src = source.apply();
+            var state = new PsgSimulationState(src);
+
+            IntSignal chA = new IntSignal() {
+                public Context context() { return Ym2149Processor.this.context; }
+                public int intAt(long t)  { return state.getChA(t); }
+            };
+            IntSignal chB = new IntSignal() {
+                public Context context() { return Ym2149Processor.this.context; }
+                public int intAt(long t)  { return state.getChB(t); }
+            };
+            IntSignal chC = new IntSignal() {
+                public Context context() { return Ym2149Processor.this.context; }
+                public int intAt(long t)  { return state.getChC(t); }
+            };
+            return DefaultArray.a(chA, chB, chC);
+        }
+
+        // YM-file mode: resample the 15-signal source up to YM_CLOCK Hz.
         // BOOL write-enable: true only at sample positions aligned with
         // the original source frame boundaries; false (zero-stuffed) elsewhere.
         Processor upsampled = context.resample(source);
@@ -150,6 +202,55 @@ public record Ym2149Processor(Context context, Processor source) implements Defa
                             chip.writeRegister(r, src.at(r).intAt(i));
                         }
                     }
+                }
+                // Advance the chip by one YM2149 clock cycle.
+                chip.risingEdge(true, true, true, false, false, 0);
+                chA = chip.getChAIndexO();
+                chB = chip.getChBIndexO();
+                chC = chip.getChCIndexO();
+                lastTime = i;
+            }
+        }
+
+        int getChA(long t) { advanceTo(t); return chA; }
+        int getChB(long t) { advanceTo(t); return chB; }
+        int getChC(long t) { advanceTo(t); return chC; }
+    }
+
+    /**
+     * PSG-capture simulation state: advances the chip one cycle at a time,
+     * writing a <em>single</em> register per write-enable pulse.
+     *
+     * <p>Source signals:
+     * <ul>
+     *   <li>Signal 0: BOOL write-enable</li>
+     *   <li>Signal 1: INT register number</li>
+     *   <li>Signal 2: INT register value</li>
+     * </ul>
+     */
+    private static final class PsgSimulationState {
+
+        private final SignalArray src;
+        private final Ym2149AudioIndexed chip = new Ym2149AudioIndexed(0, 0);
+
+        private long lastTime = -1;
+        private int chA = 0;
+        private int chB = 0;
+        private int chC = 0;
+
+        PsgSimulationState(SignalArray src) {
+            this.src = src;
+            chip.applyReset();
+        }
+
+        /** Advance the simulation to sample {@code t} (inclusive). */
+        void advanceTo(long t) {
+            for (long i = lastTime + 1; i <= t; i++) {
+                // Write a single register when the write-enable pulse is present.
+                if (src.at(0).boolAt(i)) {
+                    int reg = src.at(1).intAt(i);
+                    int val = src.at(2).intAt(i);
+                    chip.writeRegister(reg, val);
                 }
                 // Advance the chip by one YM2149 clock cycle.
                 chip.risingEdge(true, true, true, false, false, 0);
