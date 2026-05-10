@@ -58,7 +58,7 @@ import org.jm2149.vhdl.indexed.Ym2149AudioIndexed;
 public record Ym2149Processor(Context context, Processor source) implements DefaultProcessor {
 
     /** YM2149 chip clock frequency in Hz. */
-    public static final long YM_CLOCK = 250_000L;
+    public static final long YM_CLOCK = 2_000_000;
 
     private static final Signal.Type[] OUT_TYPES =
             {Signal.Type.INT, Signal.Type.INT, Signal.Type.INT};
@@ -124,7 +124,7 @@ public record Ym2149Processor(Context context, Processor source) implements Defa
     private static final class SimulationState {
 
         private final SignalArray src;
-        private final Ym2149AudioIndexed chip = new Ym2149AudioIndexed();
+        private final Ym2149AudioIndexed chip = new Ym2149AudioIndexed(0, 0);
 
         private long lastTime = -1;
         private int chA = 0;
@@ -143,11 +143,16 @@ public record Ym2149Processor(Context context, Processor source) implements Defa
                 // Write all 14 registers when the write-enable pulse is present.
                 if (src.at(14).boolAt(i)) {
                     for (int r = 0; r < 14; r++) {
-                        chip.writeRegister(r, src.at(r).intAt(i));
+                        int srcVal = src.at(r).intAt(i);
+                        // when R13=255 do not touch (and reset!) the envelope generator on that sample
+                        // ym format special case
+                        if (!(r == 13 && srcVal == 255)) {
+                            chip.writeRegister(r, src.at(r).intAt(i));
+                        }
                     }
                 }
                 // Advance the chip by one YM2149 clock cycle.
-                chip.risingEdge(true, false, true, false, false, 0);
+                chip.risingEdge(true, true, true, false, false, 0);
                 chA = chip.getChAIndexO();
                 chB = chip.getChBIndexO();
                 chC = chip.getChCIndexO();

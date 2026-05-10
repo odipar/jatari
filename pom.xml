@@ -28,7 +28,7 @@
         <dependency>
             <groupId>org.jm2149.vhdl</groupId>
             <artifactId>jm2149_vhdl</artifactId>
-            <version>0.1-SNAPSHOT</version>
+            <version>0.2-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>org.jaust</groupId>
