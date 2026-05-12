@@ -15,12 +15,11 @@
 
     <repositories>
         <repository>
-            <id>github-jm2149</id>
-            <url>https://maven.pkg.github.com/odipar/jm2149_vhdl</url>
-        </repository>
-        <repository>
-            <id>github-jaust</id>
-            <url>https://maven.pkg.github.com/odipar/jaust</url>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/odipar/*</url>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
         </repository>
     </repositories>
 
