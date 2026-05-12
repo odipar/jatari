@@ -19,7 +19,7 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
-          server-id: github-jm2149
+          server-id: github-jatari
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
 
