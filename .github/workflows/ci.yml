@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,7 +23,7 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
-          server-id: github-jatari
+          server-id: github
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
 
