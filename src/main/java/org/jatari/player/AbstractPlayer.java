@@ -47,6 +47,8 @@ public abstract class AbstractPlayer<T> {
     /** Selectable cutoff frequencies for the optional IIR low-pass filter. */
     public enum LpfOption {
         OFF    ("No filter",   0),
+        F1KHZ  ( "100 Hz",  100),
+        F2KHZ  ( "2 kHz",  2_000),
         F4KHZ  ( "4 kHz",  4_000),
         F6KHZ  ( "6 kHz",  6_000),
         F8KHZ  ( "8 kHz",  8_000),
@@ -74,7 +76,9 @@ public abstract class AbstractPlayer<T> {
         F10KHZ ("100 Hz",  100),
         F12KHZ ("120 Hz",  120),
         F16KHZ ("160 Hz",  160),
-        F20KHZ ("200 Hz",  200);
+        F20KHZ ("200 Hz",  200),
+        F40KHZ ("4 kHz",  4000),
+        F80KHZ ("8 kHz",  8000);
 
         /** Human-readable label shown in the UI. */
         public final String label;

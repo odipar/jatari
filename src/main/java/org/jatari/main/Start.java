@@ -51,8 +51,8 @@ class StartDemo {
                 ymProc.outType().length, ymProc.context().frequency());
 
         var ymOut = ymProc.apply();
-        int samplesToShow = 3;
-        long ratio = Ym2149Processor.YM_CLOCK / ym.frameRate(); // samples per frame
+        int samplesToShow = 100;
+        long ratio = 100*(Ym2149Processor.YM_CLOCK / ym.frameRate()); // samples per frame
         for (int frame = 0; frame < samplesToShow; frame++) {
             long t = frame * ratio;
             System.out.printf("YM sample t=%6d (frame %d): chA=%2d chB=%2d chC=%2d%n",
