@@ -4,6 +4,8 @@ import javax.sound.sampled.LineUnavailableException;
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,6 +41,7 @@ abstract class AbstractPlayerApp<P extends AbstractPlayer<?>> {
     protected JProgressBar                        progressBar;
     protected JButton                             btnOpen;
     protected JButton                             btnPlay;
+    protected JButton                             btnPause;
     protected JButton                             btnExport;
     protected JLabel                              lblStatus;
     protected JComboBox<AbstractPlayer.LpfOption> cmbLpf;
@@ -46,6 +49,11 @@ abstract class AbstractPlayerApp<P extends AbstractPlayer<?>> {
     protected JList<Path>                         fileList;
     protected DefaultListModel<Path>              fileListModel;
     protected Timer                               uiTimer;
+
+    // Keyboard search state
+    private static final int SEARCH_TIMEOUT_MS = 800;
+    private StringBuilder searchBuffer = new StringBuilder();
+    private long          lastKeyTime  = 0;
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -180,6 +188,26 @@ abstract class AbstractPlayerApp<P extends AbstractPlayer<?>> {
             if (sel != null) loadAndPlay(sel);
         });
 
+        fileList.addKeyListener(new KeyAdapter() {
+            @Override public void keyTyped(KeyEvent e) {
+                char ch = e.getKeyChar();
+                if (!Character.isLetterOrDigit(ch) && ch != '.' && ch != '_' && ch != '-') return;
+                long now = System.currentTimeMillis();
+                if (now - lastKeyTime > SEARCH_TIMEOUT_MS) searchBuffer.setLength(0);
+                lastKeyTime = now;
+                searchBuffer.append(Character.toLowerCase(ch));
+                String prefix = searchBuffer.toString();
+                for (int i = 0; i < fileListModel.size(); i++) {
+                    String name = fileListModel.get(i).getFileName().toString().toLowerCase();
+                    if (name.startsWith(prefix)) {
+                        fileList.setSelectedIndex(i);
+                        fileList.ensureIndexIsVisible(i);
+                        break;
+                    }
+                }
+            }
+        });
+
         JScrollPane scroll = new JScrollPane(fileList);
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         panel.add(scroll, BorderLayout.CENTER);
@@ -232,10 +260,14 @@ abstract class AbstractPlayerApp<P extends AbstractPlayer<?>> {
         btnPlay   = new JButton("Play");
         btnPlay.setEnabled(false);
         btnPlay.setPreferredSize(new Dimension(80, btnPlay.getPreferredSize().height));
+        btnPause  = new JButton("Pause");
+        btnPause.setEnabled(false);
+        btnPause.setPreferredSize(new Dimension(80, btnPause.getPreferredSize().height));
         btnExport = new JButton("Export WAV…");
         btnExport.setEnabled(false);
         buttons.add(btnOpen);
         buttons.add(btnPlay);
+        buttons.add(btnPause);
         buttons.add(btnExport);
 
         lblStatus = new JLabel(" ");
@@ -248,6 +280,7 @@ abstract class AbstractPlayerApp<P extends AbstractPlayer<?>> {
 
         btnOpen.addActionListener(e -> openFile());
         btnPlay.addActionListener(e -> togglePlayback());
+        btnPause.addActionListener(e -> togglePause());
         btnExport.addActionListener(e -> exportWav());
 
         return panel;
@@ -302,11 +335,25 @@ abstract class AbstractPlayerApp<P extends AbstractPlayer<?>> {
         else startPlayback();
     }
 
+    private void togglePause() {
+        if (player.isPaused()) {
+            player.resume();
+            btnPause.setText("Pause");
+            lblStatus.setText("Playing: " + selectedPath.getFileName());
+        } else {
+            player.pause();
+            btnPause.setText("Continue");
+            lblStatus.setText("Paused: " + selectedPath.getFileName());
+        }
+    }
+
     private void startPlayback() {
         if (selectedPath == null) return;
         try {
             player.play(selectedPath);
             btnPlay.setText("Stop");
+            btnPause.setEnabled(true);
+            btnPause.setText("Pause");
             lblStatus.setText("Playing: " + selectedPath.getFileName());
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(frame,
@@ -318,6 +365,8 @@ abstract class AbstractPlayerApp<P extends AbstractPlayer<?>> {
     private void stopPlayback() {
         player.stop();
         btnPlay.setText("Play");
+        btnPause.setEnabled(false);
+        btnPause.setText("Pause");
         lblStatus.setText(selectedPath != null
                 ? "Stopped: " + selectedPath.getFileName() : " ");
         progressBar.setValue(0);
@@ -326,6 +375,8 @@ abstract class AbstractPlayerApp<P extends AbstractPlayer<?>> {
 
     private void onPlaybackStopped() {
         btnPlay.setText("Play");
+        btnPause.setEnabled(false);
+        btnPause.setText("Pause");
         lblStatus.setText(selectedPath != null
                 ? "Finished: " + selectedPath.getFileName() : " ");
     }
