@@ -128,7 +128,7 @@ public class YmPlayer extends AbstractPlayer<YmFile> {
         SignalArray ymOut     = ymProc.apply();
 
         DefaultContext ctx2m  = new DefaultContext(Ym2149Processor.YM_CLOCK);
-        LinearMixer mixer  = new LinearMixer(ctx2m);
+        YmMixer mixer  = new YmMixer(ctx2m);
         Signal         mixSig = mixer.apply(ymOut).at(0);
 
         return buildFilterChain(mixSig, ctx2m, Ym2149Processor.YM_CLOCK, lpfCutoffHz, hpfCutoffHz);

@@ -1,5 +1,6 @@
 package org.jatari.player;
 
+import org.jatari.atari.LinearMixer;
 import org.jatari.atari.YmMixer;
 import org.jatari.psg.PsgCapture;
 import org.jatari.psg.PsgCaptureParser;

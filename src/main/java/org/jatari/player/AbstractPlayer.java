@@ -1,11 +1,13 @@
 package org.jatari.player;
 
 import org.jatari.atari.YmMixer;
-import org.jatari.dsp.HighPassFilter;
-import org.jatari.dsp.LowPassFilter;
 import org.jaust.Context;
+import org.jaust.Processor;
 import org.jaust.Signal;
 import org.jaust.context.DefaultContext;
+import org.jaust.filter.ButterworthLowPass;
+import org.jaust.filter.IirHighPass;
+import org.jaust.filter.IirLowPass;
 import org.jaust.signal.DoubleSignal;
 import org.jaust.signal.IntSignal;
 import org.jaust.signal.array.DefaultArray;
@@ -211,30 +213,39 @@ public abstract class AbstractPlayer<T> {
             Signal mixSig, DefaultContext ctx2m, long ymClock,
             IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz) {
 
+        DoubleSignal mixSig3 = new DoubleSignal() {
+            public Context context() { return ctx2m; }
+            public double doubleAt(long l) {
+                return mixSig.intAt(l)/32767.0;
+            }
+        };
+        
         DoubleSignal lpfCutoff = new DoubleSignal() {
             public Context context()        { return ctx2m; }
             public double  doubleAt(long t) { return lpfCutoffHz.getAsInt(); }
         };
-        Signal lpfSig = new LowPassFilter(ctx2m)
-                .apply(DefaultArray.a(mixSig, lpfCutoff)).at(0);
-
+        
+        //Signal lpfSig = (new IirLowPass(ctx2m)).apply(DefaultArray.a(mixSig3, lpfCutoff)).at(0);
+        
+        Signal lpfSig = (new ButterworthLowPass(ctx2m)).apply(DefaultArray.a(mixSig3, lpfCutoff)).at(0);
+        
         DoubleSignal hpfCutoff = new DoubleSignal() {
             public Context context()        { return ctx2m; }
             public double  doubleAt(long t) { return hpfCutoffHz.getAsInt(); }
         };
-        Signal hpfSig = new HighPassFilter(ctx2m)
-                .apply(DefaultArray.a(lpfSig, hpfCutoff)).at(0);
+        
+        Signal hpfSig = (new IirHighPass(ctx2m)).apply(DefaultArray.a(lpfSig, hpfCutoff)).at(0);
 
         DefaultContext ctx44k = new DefaultContext(SAMPLE_RATE);
         final Signal   filt   = hpfSig;
-
+        
         return new IntSignal() {
             public Context context() { return ctx44k; }
             public int intAt(long t) {
                 long start = t * ymClock / SAMPLE_RATE;
                 long end   = (t + 1) * ymClock / SAMPLE_RATE;
                 long sum = 0, count = end - start;
-                for (long i = start; i < end; i++) sum += filt.intAt(i);
+                for (long i = start; i < end; i++) sum += (int)(filt.doubleAt(i)*32767.0);
                 return (count > 0) ? (int) (sum / count) : 0;
             }
         };

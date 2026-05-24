@@ -72,6 +72,7 @@ public class YmMixer implements DefaultProcessor {
         }
         return table;
     }
+
     
     private static double modelMixValue(double c, double b, double a, double warp) {
         return (65535.0 * warp) / (1.0 + 1.0 / (c + b + a));
