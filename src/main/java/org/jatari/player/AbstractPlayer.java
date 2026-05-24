@@ -42,6 +42,9 @@ public abstract class AbstractPlayer<T> {
     /** Number of 16-bit output samples per audio-buffer write (~46 ms). */
     static final int BUFFER_SAMPLES = 2048;
 
+    /** Polling interval (ms) while paused, before rechecking the pause flag. */
+    private static final int PAUSE_POLL_MS = 50;
+
     // -----------------------------------------------------------------------
     // Filter options
     // -----------------------------------------------------------------------
@@ -97,6 +100,7 @@ public abstract class AbstractPlayer<T> {
     // -----------------------------------------------------------------------
 
     volatile boolean        playing         = false;
+    volatile boolean        paused          = false;
     volatile boolean        stopRequested   = false;
     volatile long           positionSamples = 0;
     volatile Thread         playerThread;
@@ -149,6 +153,8 @@ public abstract class AbstractPlayer<T> {
     public synchronized void play(Path path) throws IOException {
         stop();
         T data = parse(path);
+        stopRequested = false;
+        paused        = false;
         playerThread = new Thread(() -> {
             try {
                 runPlayback(data);
@@ -162,7 +168,9 @@ public abstract class AbstractPlayer<T> {
 
     /** Stops playback and waits (up to 2 s) for the background thread to finish. */
     public synchronized void stop() {
+        if (!playing && playerThread == null) return;
         stopRequested = true;
+        paused        = false;
         SourceDataLine l = this.audioLine;
         if (l != null) { l.stop(); l.flush(); }
         Thread t = playerThread;
@@ -170,11 +178,31 @@ public abstract class AbstractPlayer<T> {
             try { t.join(2000); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         }
-        playing = false;
+        playing      = false;
+        playerThread = null;
     }
 
-    /** Returns {@code true} if playback is currently running. */
+    /** Pauses playback.  Call {@link #resume()} to continue. */
+    public synchronized void pause() {
+        if (!playing || paused) return;
+        paused = true;
+        SourceDataLine l = this.audioLine;
+        if (l != null) l.stop();
+    }
+
+    /** Resumes playback after a {@link #pause()}. */
+    public synchronized void resume() {
+        if (!playing || !paused) return;
+        paused = false;
+        SourceDataLine l = this.audioLine;
+        if (l != null) l.start();
+    }
+
+    /** Returns {@code true} if playback is currently running (even if paused). */
     public boolean isPlaying() { return playing; }
+
+    /** Returns {@code true} if playback is currently paused. */
+    public boolean isPaused() { return paused; }
 
     /**
      * Returns the current playback position in seconds (updated every buffer
@@ -281,7 +309,6 @@ public abstract class AbstractPlayer<T> {
             byte[] buffer = new byte[BUFFER_SAMPLES * 2];
             int    bufIdx = 0;
 
-            stopRequested   = false;
             playing         = true;
             positionSamples = 0;
 
@@ -289,6 +316,11 @@ public abstract class AbstractPlayer<T> {
             long t44k = 0;
 
             while (!stopRequested && (loop || t44k < totalSamples)) {
+                if (paused) {
+                    try { Thread.sleep(PAUSE_POLL_MS); } catch (InterruptedException e) { break; }
+                    continue;
+                }
+
                 int sample = outputSignal.intAt(loop ? t44k % totalSamples : t44k);
 
                 buffer[bufIdx++] = (byte)  (sample       & 0xFF);
@@ -307,11 +339,13 @@ public abstract class AbstractPlayer<T> {
             }
 
             if (bufIdx > 0) line.write(buffer, 0, bufIdx);
-            line.drain();
+            if (!stopRequested) { line.drain(); }
             line.stop();
         }
 
         playing        = false;
+        paused         = false;
+        playerThread   = null;
         this.audioLine = null;
         if (listener != null) listener.onStopped();
     }
