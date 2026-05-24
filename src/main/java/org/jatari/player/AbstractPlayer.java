@@ -347,7 +347,7 @@ public abstract class AbstractPlayer<T> {
         paused         = false;
         playerThread   = null;
         this.audioLine = null;
-        if (listener != null) listener.onStopped();
+        if (listener != null && !stopRequested) listener.onStopped();
     }
 
     // -----------------------------------------------------------------------
