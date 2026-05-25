@@ -8,6 +8,7 @@ import org.jaust.context.DefaultContext;
 import org.jaust.filter.ButterworthLowPass;
 import org.jaust.filter.IirHighPass;
 import org.jaust.filter.IirLowPass;
+import org.jaust.filter.SequentialDoubleCache;
 import org.jaust.signal.DoubleSignal;
 import org.jaust.signal.IntSignal;
 import org.jaust.signal.array.DefaultArray;
@@ -83,8 +84,9 @@ public abstract class AbstractPlayer<T> {
         F16KHZ ("160 Hz",  160),
         F20KHZ ("200 Hz",  200),
         F40KHZ ("4 kHz",  4000),
-        F80KHZ ("8 kHz",  8000);
-
+        F80KHZ ("8 kHz",  8000),
+        F160KHZ ("16 kHz",  16000);
+        
         /** Human-readable label shown in the UI. */
         public final String label;
         /** Cutoff frequency in Hz; 0 means filter is disabled. */
@@ -241,19 +243,17 @@ public abstract class AbstractPlayer<T> {
             Signal mixSig, DefaultContext ctx2m, long ymClock,
             IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz) {
 
-        DoubleSignal mixSig3 = new DoubleSignal() {
+        DoubleSignal mixSig3 = new SequentialDoubleCache(new DoubleSignal() {
             public Context context() { return ctx2m; }
             public double doubleAt(long l) {
                 return mixSig.intAt(l)/32767.0;
             }
-        };
+        });
         
         DoubleSignal lpfCutoff = new DoubleSignal() {
             public Context context()        { return ctx2m; }
             public double  doubleAt(long t) { return lpfCutoffHz.getAsInt(); }
         };
-        
-        //Signal lpfSig = (new IirLowPass(ctx2m)).apply(DefaultArray.a(mixSig3, lpfCutoff)).at(0);
         
         Signal lpfSig = (new ButterworthLowPass(ctx2m)).apply(DefaultArray.a(mixSig3, lpfCutoff)).at(0);
         
