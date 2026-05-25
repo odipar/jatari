@@ -1,6 +1,5 @@
 package org.jatari.player;
 
-import org.jatari.atari.LinearMixer;
 import org.jatari.atari.YmMixer;
 import org.jatari.ym.Ym2149Processor;
 import org.jatari.ym.format.YmFile;
@@ -13,7 +12,6 @@ import org.jaust.signal.SignalArray;
 
 import javax.sound.sampled.LineUnavailableException;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.IntSupplier;
 
@@ -57,53 +55,8 @@ public class YmPlayer extends AbstractPlayer<YmFile> {
     protected void runPlayback(YmFile ym) throws LineUnavailableException {
         Signal outputSignal  = buildOutputSignal(ym,
                 () -> lpfOption.cutoffHz, () -> hpfOption.cutoffHz);
-        long   samplesPerLoop  = (long) ((double) ym.numFrames() * SAMPLE_RATE / ym.frameRate());
         double durationSeconds = (double) ym.numFrames() / ym.frameRate();
-        runAudioLine(outputSignal, samplesPerLoop, durationSeconds, true);
-    }
-
-    // -----------------------------------------------------------------------
-    // WAV export
-    // -----------------------------------------------------------------------
-
-    /**
-     * Renders a full song loop to a 16-bit mono 44 100 Hz WAV file using the
-     * current filter settings.  Blocks until rendering is complete.
-     *
-     * @param ym      parsed YM file to render
-     * @param wavPath destination WAV file path (created or overwritten)
-     * @throws IOException on file I/O errors
-     */
-    public void exportWav(YmFile ym, Path wavPath) throws IOException {
-        int lpfHz = lpfOption.cutoffHz;
-        int hpfHz = hpfOption.cutoffHz;
-        exportWav(ym, wavPath, () -> lpfHz, () -> hpfHz);
-    }
-
-    /**
-     * Renders a full song loop to a 16-bit mono 44 100 Hz WAV file using the
-     * given filter options.
-     *
-     * @param ym      parsed YM file to render
-     * @param wavPath destination WAV file path (created or overwritten)
-     * @param lpfOpt  low-pass filter option
-     * @param hpfOpt  high-pass filter option
-     * @throws IOException on file I/O errors
-     */
-    public void exportWav(YmFile ym, Path wavPath, LpfOption lpfOpt, HpfOption hpfOpt)
-            throws IOException {
-        exportWav(ym, wavPath, () -> lpfOpt.cutoffHz, () -> hpfOpt.cutoffHz);
-    }
-
-    private void exportWav(YmFile ym, Path wavPath,
-                           IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz)
-            throws IOException {
-        Signal outputSignal = buildOutputSignal(ym, lpfCutoffHz, hpfCutoffHz);
-        long   totalSamples = (long) ((double) ym.numFrames() * SAMPLE_RATE / ym.frameRate());
-        try (var out = Files.newOutputStream(wavPath)) {
-            writeWavHeader(out, totalSamples * 2L);
-            writeWavData(outputSignal, totalSamples, out);
-        }
+        runAudioLine(outputSignal, totalSamples(ym), durationSeconds, true);
     }
 
     // -----------------------------------------------------------------------
@@ -121,8 +74,8 @@ public class YmPlayer extends AbstractPlayer<YmFile> {
      *
      * @return a {@link Signal} at {@value SAMPLE_RATE} Hz (INT, 16-bit range)
      */
-    /* package-private for testability */
-    Signal buildOutputSignal(YmFile ym, IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz) {
+    @Override
+    protected Signal buildOutputSignal(YmFile ym, IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz) {
         Processor   fileProc  = YmFileProcessor.of(ym);
         Processor   ymProc    = Ym2149Processor.of(fileProc);
         SignalArray ymOut     = ymProc.apply();
@@ -132,5 +85,10 @@ public class YmPlayer extends AbstractPlayer<YmFile> {
         Signal         mixSig = mixer.apply(ymOut).at(0);
 
         return buildFilterChain(mixSig, ctx2m, Ym2149Processor.YM_CLOCK, lpfCutoffHz, hpfCutoffHz);
+    }
+
+    @Override
+    protected long totalSamples(YmFile ym) {
+        return (long) ((double) ym.numFrames() * SAMPLE_RATE / ym.frameRate());
     }
 }

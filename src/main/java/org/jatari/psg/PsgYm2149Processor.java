@@ -1,19 +1,17 @@
 package org.jatari.psg;
 
 import org.jatari.ym.Ym2149Processor;
+import org.jatari.ym.Ym2149SimulationState;
 import org.jaust.Context;
 import org.jaust.Processor;
 import org.jaust.Signal;
 import org.jaust.context.DefaultContext;
 import org.jaust.processor.DefaultProcessor;
-import org.jaust.signal.IntSignal;
 import org.jaust.signal.SignalArray;
-import org.jaust.signal.array.DefaultArray;
-import org.jm2149.vhdl.indexed.Ym2149AudioIndexed;
 
 /**
- * A jaust {@link Processor} that drives a cycle-accurate {@link Ym2149AudioIndexed}
- * simulation from the three-signal output of a {@link PsgCaptureProcessor}.
+ * A jaust {@link Processor} that drives a cycle-accurate
+ * {@link org.jm2149.vhdl.indexed.Ym2149AudioIndexed} simulation from the three-signal output of a {@link PsgCaptureProcessor}.
  *
  * <h2>Input (source processor)</h2>
  * <p>Accepts a source {@link Processor} with <b>3 outputs</b> running at the
@@ -74,63 +72,22 @@ public record PsgYm2149Processor(Context context, Processor source)
     @Override
     public SignalArray apply(SignalArray in) {
         // The source already runs at YM_CLOCK — no resampling required.
-        SignalArray src   = source.apply();
-        var         state = new SimulationState(src);
-
-        IntSignal chA = new IntSignal() {
-            public Context context() { return PsgYm2149Processor.this.context; }
-            public int intAt(long t)  { return state.getChA(t); }
-        };
-        IntSignal chB = new IntSignal() {
-            public Context context() { return PsgYm2149Processor.this.context; }
-            public int intAt(long t)  { return state.getChB(t); }
-        };
-        IntSignal chC = new IntSignal() {
-            public Context context() { return PsgYm2149Processor.this.context; }
-            public int intAt(long t)  { return state.getChC(t); }
-        };
-        return DefaultArray.a(chA, chB, chC);
+        return new SimulationState(source.apply()).buildOutputArray(context);
     }
 
     /**
-     * Mutable simulation state: advances the {@link Ym2149AudioIndexed} chip
-     * lazily and sequentially, one 2 MHz clock cycle at a time.
-     *
-     * <p>At each step:
-     * <ol>
-     *   <li>If the write-enable signal is {@code true}, write the register.</li>
-     *   <li>Advance the chip by one rising clock edge.</li>
-     *   <li>Latch the three DAC-index outputs.</li>
-     * </ol>
+     * Holds the mutable {@link Ym2149SimulationState} and implements the
+     * PSG-capture-specific register-write logic (one register per write event).
      */
-    private static final class SimulationState {
+    private static final class SimulationState extends Ym2149SimulationState {
 
-        private final SignalArray       src;
-        private final Ym2149AudioIndexed chip = new Ym2149AudioIndexed(0, 0);
+        SimulationState(SignalArray src) { super(src); }
 
-        private long lastTime = -1;
-        private int  chA = 0, chB = 0, chC = 0;
-
-        SimulationState(SignalArray src) {
-            this.src = src;
-            chip.applyReset();
-        }
-
-        void advanceTo(long t) {
-            for (long i = lastTime + 1; i <= t; i++) {
-                if (src.at(0).boolAt(i)) {
-                    chip.writeRegister(src.at(1).intAt(i), src.at(2).intAt(i));
-                }
-                chip.risingEdge(true, true, true, false, false, 0);
-                chA      = chip.getChAIndexO();
-                chB      = chip.getChBIndexO();
-                chC      = chip.getChCIndexO();
-                lastTime = i;
+        @Override
+        protected void writeRegisters(long i) {
+            if (src.at(0).boolAt(i)) {
+                chip.writeRegister(src.at(1).intAt(i), src.at(2).intAt(i));
             }
         }
-
-        int getChA(long t) { advanceTo(t); return chA; }
-        int getChB(long t) { advanceTo(t); return chB; }
-        int getChC(long t) { advanceTo(t); return chC; }
     }
 }

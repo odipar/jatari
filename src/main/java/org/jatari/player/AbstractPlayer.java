@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.IntSupplier;
 
@@ -224,6 +225,66 @@ public abstract class AbstractPlayer<T> {
 
     /** Name for the player daemon thread, e.g. {@code "ym-player"}. */
     protected abstract String threadName();
+
+    /**
+     * Builds the full output signal chain for the given audio data using the
+     * supplied filter cutoff suppliers.
+     *
+     * @return a {@link Signal} at {@value SAMPLE_RATE} Hz (INT, 16-bit range)
+     */
+    protected abstract Signal buildOutputSignal(T data,
+            IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz);
+
+    /**
+     * Returns the total number of 44 100 Hz output samples for the given data.
+     *
+     * @return total sample count
+     */
+    protected abstract long totalSamples(T data);
+
+    // -----------------------------------------------------------------------
+    // WAV export
+    // -----------------------------------------------------------------------
+
+    /**
+     * Renders the audio data to a 16-bit mono 44 100 Hz WAV file using the
+     * current filter settings.  Blocks until rendering is complete.
+     *
+     * @param data    parsed audio data to render
+     * @param wavPath destination WAV file path (created or overwritten)
+     * @throws IOException on file I/O errors
+     */
+    public void exportWav(T data, Path wavPath) throws IOException {
+        int lpfHz = lpfOption.cutoffHz;
+        int hpfHz = hpfOption.cutoffHz;
+        exportWav(data, wavPath, () -> lpfHz, () -> hpfHz);
+    }
+
+    /**
+     * Renders the audio data to a 16-bit mono 44 100 Hz WAV file using the
+     * given filter options.
+     *
+     * @param data    parsed audio data to render
+     * @param wavPath destination WAV file path (created or overwritten)
+     * @param lpfOpt  low-pass filter option
+     * @param hpfOpt  high-pass filter option
+     * @throws IOException on file I/O errors
+     */
+    public void exportWav(T data, Path wavPath, LpfOption lpfOpt, HpfOption hpfOpt)
+            throws IOException {
+        exportWav(data, wavPath, () -> lpfOpt.cutoffHz, () -> hpfOpt.cutoffHz);
+    }
+
+    private void exportWav(T data, Path wavPath,
+                           IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz)
+            throws IOException {
+        Signal outputSignal = buildOutputSignal(data, lpfCutoffHz, hpfCutoffHz);
+        long   total        = totalSamples(data);
+        try (var out = Files.newOutputStream(wavPath)) {
+            writeWavHeader(out, total * 2L);
+            writeWavData(outputSignal, total, out);
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Shared signal-pipeline helper
