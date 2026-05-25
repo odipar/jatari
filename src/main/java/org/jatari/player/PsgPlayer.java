@@ -63,15 +63,13 @@ public class PsgPlayer extends AbstractPlayer<PsgCapture> {
     // -----------------------------------------------------------------------
 
     /**
-     * Builds the full output signal chain for a given PSG capture.
+     * {@inheritDoc}
      *
      * <p>Pipeline:
      * <pre>
      *   PsgCaptureProcessor → PsgYm2149Processor → YmMixer
      *     → [LowPassFilter] → [HighPassFilter] → box-filter downsample
      * </pre>
-     *
-     * @return a {@link Signal} at {@value SAMPLE_RATE} Hz (INT, 16-bit range)
      */
     @Override
     protected Signal buildOutputSignal(PsgCapture capture, IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz) {

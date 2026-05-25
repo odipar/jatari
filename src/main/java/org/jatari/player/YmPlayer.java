@@ -64,15 +64,13 @@ public class YmPlayer extends AbstractPlayer<YmFile> {
     // -----------------------------------------------------------------------
 
     /**
-     * Builds the full output signal chain for a given YM file.
+     * {@inheritDoc}
      *
      * <p>Pipeline:
      * <pre>
      *   YmFileProcessor → Ym2149Processor → YmMixer
      *     → [LowPassFilter] → [HighPassFilter] → box-filter downsample
      * </pre>
-     *
-     * @return a {@link Signal} at {@value SAMPLE_RATE} Hz (INT, 16-bit range)
      */
     @Override
     protected Signal buildOutputSignal(YmFile ym, IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz) {
