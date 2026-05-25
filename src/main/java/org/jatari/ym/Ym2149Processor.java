@@ -5,14 +5,11 @@ import org.jaust.Processor;
 import org.jaust.Signal;
 import org.jaust.context.DefaultContext;
 import org.jaust.processor.DefaultProcessor;
-import org.jaust.signal.IntSignal;
 import org.jaust.signal.SignalArray;
-import org.jaust.signal.array.DefaultArray;
-import org.jm2149.vhdl.indexed.Ym2149AudioIndexed;
 
 /**
- * A jaust {@link Processor} that drives a cycle-accurate {@link Ym2149AudioIndexed}
- * simulation and exposes the three channel outputs as jaust signals.
+ * A jaust {@link Processor} that drives a cycle-accurate
+ * {@link org.jm2149.vhdl.indexed.Ym2149AudioIndexed} simulation and exposes the three channel outputs as jaust signals.
  *
  * <h2>Input (source processor)</h2>
  * <p>Accepts a source {@link Processor} with <b>15 outputs</b> running at the
@@ -83,85 +80,29 @@ public record Ym2149Processor(Context context, Processor source) implements Defa
         // Resample the 15-signal source up to YM_CLOCK Hz.
         // BOOL write-enable: true only at sample positions aligned with
         // the original source frame boundaries; false (zero-stuffed) elsewhere.
-        Processor upsampled = context.resample(source);
-        SignalArray src = upsampled.apply();
-
-        // All three output signals share a single mutable state that
-        // advances the chip simulation lazily and sequentially.
-        var state = new SimulationState(src);
-
-        IntSignal chA = new IntSignal() {
-            public Context context() { return Ym2149Processor.this.context; }
-            public int intAt(long t)  { return state.getChA(t); }
-        };
-        IntSignal chB = new IntSignal() {
-            public Context context() { return Ym2149Processor.this.context; }
-            public int intAt(long t)  { return state.getChB(t); }
-        };
-        IntSignal chC = new IntSignal() {
-            public Context context() { return Ym2149Processor.this.context; }
-            public int intAt(long t)  { return state.getChC(t); }
-        };
-        return DefaultArray.a(chA, chB, chC);
+        return new SimulationState(context.resample(source).apply()).buildOutputArray(context);
     }
 
     /**
-     * Holds the mutable {@link Ym2149AudioIndexed} simulation state and advances
-     * it lazily in sample order.
-     *
-     * <p>When any output signal queries sample time {@code t}, the simulator
-     * advances one clock cycle at a time from the last processed sample up to
-     * and including {@code t}.  At each step:
-     * <ol>
-     *   <li>If the upsampled write-enable signal is {@code true}, all 14
-     *       register values are written to the chip via
-     *       {@link Ym2149AudioIndexed#writeRegister}.</li>
-     *   <li>One rising-clock-edge is simulated with standard operating
-     *       conditions: {@code enClkPsgI=true, selNI=false, resetNI=true}.</li>
-     *   <li>The three DAC-index outputs are latched.</li>
-     * </ol>
+     * Holds the mutable {@link Ym2149SimulationState} and implements the
+     * YM-file-specific register-write logic (all 14 registers at once).
      */
-    private static final class SimulationState {
+    private static final class SimulationState extends Ym2149SimulationState {
 
-        private final SignalArray src;
-        private final Ym2149AudioIndexed chip = new Ym2149AudioIndexed(0, 0);
+        SimulationState(SignalArray src) { super(src); }
 
-        private long lastTime = -1;
-        private int chA = 0;
-        private int chB = 0;
-        private int chC = 0;
-
-        SimulationState(SignalArray src) {
-            this.src = src;
-            chip.applyReset();
-        }
-
-        /** Advance the simulation to sample {@code t} (inclusive). */
-        void advanceTo(long t) {
-            // TODO: reset when advanceTo is called with t < lastTime?
-            for (long i = lastTime + 1; i <= t; i++) {
-                // Write all 14 registers when the write-enable pulse is present.
-                if (src.at(14).boolAt(i)) {
-                    for (int r = 0; r < 14; r++) {
-                        int srcVal = src.at(r).intAt(i);
-                        // when R13=255 do not touch (and reset!) the envelope generator on that sample
-                        // ym format special case
-                        if (!(r == 13 && srcVal == 255)) {
-                            chip.writeRegister(r, src.at(r).intAt(i));
-                        }
+        @Override
+        protected void writeRegisters(long i) {
+            if (src.at(14).boolAt(i)) {
+                for (int r = 0; r < 14; r++) {
+                    int srcVal = src.at(r).intAt(i);
+                    // when R13=255 do not touch (and reset!) the envelope generator on that sample
+                    // ym format special case
+                    if (!(r == 13 && srcVal == 255)) {
+                        chip.writeRegister(r, srcVal);
                     }
                 }
-                // Advance the chip by one YM2149 clock cycle.
-                chip.risingEdge(true, true, true, false, false, 0);
-                chA = chip.getChAIndexO();
-                chB = chip.getChBIndexO();
-                chC = chip.getChCIndexO();
-                lastTime = i;
             }
         }
-
-        int getChA(long t) { advanceTo(t); return chA; }
-        int getChB(long t) { advanceTo(t); return chB; }
-        int getChC(long t) { advanceTo(t); return chC; }
     }
 }

@@ -1,6 +1,5 @@
 package org.jatari.player;
 
-import org.jatari.atari.LinearMixer;
 import org.jatari.atari.YmMixer;
 import org.jatari.psg.PsgCapture;
 import org.jatari.psg.PsgCaptureParser;
@@ -13,7 +12,6 @@ import org.jaust.signal.SignalArray;
 
 import javax.sound.sampled.LineUnavailableException;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.IntSupplier;
 
@@ -57,38 +55,7 @@ public class PsgPlayer extends AbstractPlayer<PsgCapture> {
     protected void runPlayback(PsgCapture capture) throws LineUnavailableException {
         Signal outputSignal  = buildOutputSignal(capture,
                 () -> lpfOption.cutoffHz, () -> hpfOption.cutoffHz);
-        long   totalSamples    = totalSamples(capture);
-        double durationSeconds = capture.durationSeconds();
-        runAudioLine(outputSignal, totalSamples, durationSeconds, false);
-    }
-
-    // -----------------------------------------------------------------------
-    // WAV export
-    // -----------------------------------------------------------------------
-
-    /**
-     * Renders the capture to a 16-bit mono 44 100 Hz WAV file using the
-     * current filter settings.  Blocks until rendering is complete.
-     *
-     * @param capture parsed PSG capture to render
-     * @param wavPath destination WAV file path (created or overwritten)
-     * @throws IOException on file I/O errors
-     */
-    public void exportWav(PsgCapture capture, Path wavPath) throws IOException {
-        int lpfHz = lpfOption.cutoffHz;
-        int hpfHz = hpfOption.cutoffHz;
-        exportWav(capture, wavPath, () -> lpfHz, () -> hpfHz);
-    }
-
-    private void exportWav(PsgCapture capture, Path wavPath,
-                           IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz)
-            throws IOException {
-        Signal outputSignal = buildOutputSignal(capture, lpfCutoffHz, hpfCutoffHz);
-        long   totalSamples = totalSamples(capture);
-        try (var out = Files.newOutputStream(wavPath)) {
-            writeWavHeader(out, totalSamples * 2L);
-            writeWavData(outputSignal, totalSamples, out);
-        }
+        runAudioLine(outputSignal, totalSamples(capture), capture.durationSeconds(), false);
     }
 
     // -----------------------------------------------------------------------
@@ -96,18 +63,16 @@ public class PsgPlayer extends AbstractPlayer<PsgCapture> {
     // -----------------------------------------------------------------------
 
     /**
-     * Builds the full output signal chain for a given PSG capture.
+     * {@inheritDoc}
      *
      * <p>Pipeline:
      * <pre>
      *   PsgCaptureProcessor → PsgYm2149Processor → YmMixer
      *     → [LowPassFilter] → [HighPassFilter] → box-filter downsample
      * </pre>
-     *
-     * @return a {@link Signal} at {@value SAMPLE_RATE} Hz (INT, 16-bit range)
      */
-    /* package-private for testability */
-    Signal buildOutputSignal(PsgCapture capture, IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz) {
+    @Override
+    protected Signal buildOutputSignal(PsgCapture capture, IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz) {
         Processor   captureProc = PsgCaptureProcessor.of(capture);
         Processor   ymProc      = PsgYm2149Processor.of(captureProc);
         SignalArray ymOut       = ymProc.apply();
@@ -119,11 +84,8 @@ public class PsgPlayer extends AbstractPlayer<PsgCapture> {
         return buildFilterChain(mixSig, ctx2m, PsgYm2149Processor.YM_CLOCK, lpfCutoffHz, hpfCutoffHz);
     }
 
-    // -----------------------------------------------------------------------
-    // Helper
-    // -----------------------------------------------------------------------
-
-    private static long totalSamples(PsgCapture capture) {
+    @Override
+    protected long totalSamples(PsgCapture capture) {
         return (long) ((double) capture.durationYmTicks() * SAMPLE_RATE
                 / PsgYm2149Processor.YM_CLOCK);
     }
