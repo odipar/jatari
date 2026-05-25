@@ -5,10 +5,7 @@ import org.jaust.Context;
 import org.jaust.Processor;
 import org.jaust.Signal;
 import org.jaust.context.DefaultContext;
-import org.jaust.filter.ButterworthLowPass;
-import org.jaust.filter.IirHighPass;
-import org.jaust.filter.IirLowPass;
-import org.jaust.filter.SequentialDoubleCache;
+import org.jaust.filter.*;
 import org.jaust.signal.DoubleSignal;
 import org.jaust.signal.IntSignal;
 import org.jaust.signal.array.DefaultArray;
@@ -323,7 +320,7 @@ public abstract class AbstractPlayer<T> {
             public double  doubleAt(long t) { return hpfCutoffHz.getAsInt(); }
         };
         
-        Signal hpfSig = (new IirHighPass(ctx2m)).apply(DefaultArray.a(lpfSig, hpfCutoff)).at(0);
+        Signal hpfSig = (new ButterworthHighPass(ctx2m)).apply(DefaultArray.a(lpfSig, hpfCutoff)).at(0);
 
         DefaultContext ctx44k = new DefaultContext(SAMPLE_RATE);
         final Signal   filt   = hpfSig;
