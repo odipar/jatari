@@ -6,6 +6,7 @@ import org.jaust.Processor;
 import org.jaust.Signal;
 import org.jaust.context.DefaultContext;
 import org.jaust.filter.*;
+import org.jaust.processor.OutProcessor;
 import org.jaust.signal.DoubleSignal;
 import org.jaust.signal.IntSignal;
 import org.jaust.signal.array.DefaultArray;
@@ -22,10 +23,10 @@ import java.util.function.IntSupplier;
 /**
  * Abstract base for YM2149 audio players ({@link YmPlayer}, {@link PsgPlayer}).
  *
- * <p>Encapsulates the shared audio pipeline (IIR LPF / HPF + box-filter
- * downsample to 44.1 kHz), WAV export, playback-thread lifecycle, and filter
- * configuration.  Concrete subclasses supply a file parser and a
- * format-specific signal-chain builder.
+ * <p>Encapsulates the shared audio pipeline (IIR LPF / HPF + jaust
+ * {@code resample} downsample to 44.1 kHz), WAV export, playback-thread
+ * lifecycle, and filter configuration.  Concrete subclasses supply a file
+ * parser and a format-specific signal-chain builder.
  *
  * @param <T> the parsed audio-data type (e.g. {@code YmFile} or {@code PsgCapture})
  */
@@ -288,17 +289,17 @@ public abstract class AbstractPlayer<T> {
     // -----------------------------------------------------------------------
 
     /**
-     * Applies IIR LPF → IIR HPF → box-filter downsample to {@code mixSig}
-     * and returns a {@value SAMPLE_RATE} Hz output {@link Signal}.
+     * Applies IIR LPF → IIR HPF → jaust {@code resample} downsample to
+     * {@code mixSig} and returns a {@value SAMPLE_RATE} Hz output
+     * {@link Signal}.
      *
-     * @param mixSig      mixed mono signal at {@code ymClock} Hz
-     * @param ctx2m       context running at {@code ymClock} Hz
-     * @param ymClock     YM2149 clock frequency in Hz
+     * @param mixSig      mixed mono signal at {@code ctx2m} frequency
+     * @param ctx2m       context running at the YM2149 clock frequency
      * @param lpfCutoffHz supplier of the LPF cutoff (0 = bypass)
      * @param hpfCutoffHz supplier of the HPF cutoff (0 = bypass)
      */
     protected final Signal buildFilterChain(
-            Signal mixSig, DefaultContext ctx2m, long ymClock,
+            Signal mixSig, DefaultContext ctx2m,
             IntSupplier lpfCutoffHz, IntSupplier hpfCutoffHz) {
 
         DoubleSignal mixSig3 = new SequentialDoubleCache(new DoubleSignal() {
@@ -322,19 +323,13 @@ public abstract class AbstractPlayer<T> {
         
         Signal hpfSig = (new ButterworthHighPass(ctx2m)).apply(DefaultArray.a(lpfSig, hpfCutoff)).at(0);
 
-        DefaultContext ctx44k = new DefaultContext(SAMPLE_RATE);
-        final Signal   filt   = hpfSig;
-        
-        return new IntSignal() {
-            public Context context() { return ctx44k; }
-            public int intAt(long t) {
-                long start = t * ymClock / SAMPLE_RATE;
-                long end   = (t + 1) * ymClock / SAMPLE_RATE;
-                long sum = 0, count = end - start;
-                for (long i = start; i < end; i++) sum += (int)(filt.doubleAt(i)*32767.0);
-                return (count > 0) ? (int) (sum / count) : 0;
-            }
+        IntSignal scaledSig = new IntSignal() {
+            public Context context() { return ctx2m; }
+            public int intAt(long t) { return (int)(hpfSig.doubleAt(t) * 32767.0); }
         };
+
+        DefaultContext ctx44k = new DefaultContext(SAMPLE_RATE);
+        return ctx44k.resample(new OutProcessor(scaledSig)).apply().at(0);
     }
 
     // -----------------------------------------------------------------------

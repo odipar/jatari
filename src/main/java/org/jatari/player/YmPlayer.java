@@ -25,7 +25,7 @@ import java.util.function.IntSupplier;
  *     → YmMixer (2 MHz, 1 INT signal: mixed)
  *       → [optional] LowPassFilter  (2 MHz, IIR, 1 INT)
  *         → [optional] HighPassFilter (2 MHz, IIR, 1 INT)
- *           → box-filter downsample → 44 100 Hz INT signal
+ *           → resample (box-filter) → 44 100 Hz INT signal
  *             → javax.sound.sampled SourceDataLine (16-bit LE mono signed PCM)
  * </pre>
  *
@@ -69,7 +69,7 @@ public class YmPlayer extends AbstractPlayer<YmFile> {
      * <p>Pipeline:
      * <pre>
      *   YmFileProcessor → Ym2149Processor → YmMixer
-     *     → [LowPassFilter] → [HighPassFilter] → box-filter downsample
+     *     → [LowPassFilter] → [HighPassFilter] → resample (box-filter) downsample
      * </pre>
      */
     @Override
@@ -82,7 +82,7 @@ public class YmPlayer extends AbstractPlayer<YmFile> {
         YmMixer mixer  = new YmMixer(ctx2m);
         Signal         mixSig = mixer.apply(ymOut).at(0);
 
-        return buildFilterChain(mixSig, ctx2m, Ym2149Processor.YM_CLOCK, lpfCutoffHz, hpfCutoffHz);
+        return buildFilterChain(mixSig, ctx2m, lpfCutoffHz, hpfCutoffHz);
     }
 
     @Override
