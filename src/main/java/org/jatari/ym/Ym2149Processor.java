@@ -54,8 +54,20 @@ import org.jaust.signal.SignalArray;
  */
 public record Ym2149Processor(Context context, Processor source) implements DefaultProcessor {
 
-    /** YM2149 chip clock frequency in Hz. */
-    public static final long YM_CLOCK = 2_000_000;
+    /** PAL system crystal frequency in Hz (32.084988 MHz). */
+    public static final double SYSTEM_CRYSTAL_PAL  = 32_084_988;
+
+    /** NTSC system crystal frequency in Hz (32.042440 MHz). */
+    public static final double SYSTEM_CRYSTAL_NTSC = 32_042_440;
+
+    /** PAL YM2149 master clock frequency: SYSTEM_CRYSTAL_PAL / 16 Hz (~2.005 MHz). */
+    public static final double YM2149_F_MASTER_PAL  = SYSTEM_CRYSTAL_PAL  / 16;
+
+    /** NTSC YM2149 master clock frequency: SYSTEM_CRYSTAL_NTSC / 16 Hz (~2.003 MHz). */
+    public static final double YM2149_F_MASTER_NTSC = SYSTEM_CRYSTAL_NTSC / 16;
+
+    /** YM2149 chip clock frequency in Hz (PAL default: {@code (long) YM2149_F_MASTER_PAL}). */
+    public static final long YM_CLOCK = (long) YM2149_F_MASTER_PAL;
 
     private static final Signal.Type[] OUT_TYPES =
             {Signal.Type.INT, Signal.Type.INT, Signal.Type.INT};
