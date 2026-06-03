@@ -46,7 +46,27 @@ class Ym2149ProcessorTest {
         var proc = Ym2149Processor.of(source);
 
         assertEquals(Ym2149Processor.YM_CLOCK, proc.context().frequency(),
-                "context frequency must equal YM_CLOCK");
+                "context frequency must equal YM_CLOCK (PAL default)");
+    }
+
+    @Test
+    void processor_ntscClock_contextFrequencyIsNtscMasterClock() throws IOException {
+        var source = fileProcessor("capture.ym");
+        var proc = Ym2149Processor.of(source, Ym2149Processor.YM2149_F_MASTER_NTSC);
+
+        assertEquals((long) Ym2149Processor.YM2149_F_MASTER_NTSC, proc.context().frequency(),
+                "context frequency must equal YM_CLOCK (NTSC)");
+    }
+
+    @Test
+    void systemCrystalConstants_deriveCorrectMasterClocks() {
+        assertEquals(32_084_988.0, Ym2149Processor.SYSTEM_CRYSTAL_PAL,  0.0, "PAL crystal");
+        assertEquals(32_042_440.0, Ym2149Processor.SYSTEM_CRYSTAL_NTSC, 0.0, "NTSC crystal");
+        assertEquals(Ym2149Processor.SYSTEM_CRYSTAL_PAL  / 16, Ym2149Processor.YM2149_F_MASTER_PAL,  0.0, "PAL master clock");
+        assertEquals(Ym2149Processor.SYSTEM_CRYSTAL_NTSC / 16, Ym2149Processor.YM2149_F_MASTER_NTSC, 0.0, "NTSC master clock");
+        // YM_CLOCK is the truncated integer PAL master clock (PAL default)
+        assertEquals((long) Ym2149Processor.YM2149_F_MASTER_PAL, Ym2149Processor.YM_CLOCK,
+                "YM_CLOCK must be (long) YM2149_F_MASTER_PAL");
     }
 
     // -----------------------------------------------------------------------
@@ -94,16 +114,20 @@ class Ym2149ProcessorTest {
         var upsampled = ymCtx.resample(source);
         var signals = upsampled.apply();
 
-        // Signal 14 is the write-enable BOOL
-        // Ratio: 250_000 / 50 = 5000 — true only every 5000 samples
+        // Signal 14 is the write-enable BOOL.
+        // jaust's UpProcessor places source sample i at the canonical output time
+        //   canonical(i) = (i * tgtFreq + halfSrc) / srcFreq
+        // where halfSrc = srcFreq / 2 (half-step rounding).
         long ratio = Ym2149Processor.YM_CLOCK / ym.frameRate();
 
         // Check first 3 frame boundaries and surrounding samples
         for (int frame = 0; frame < 3; frame++) {
-            long boundary = frame * ratio;
+            // Canonical output time for this frame (mirrors jaust UpProcessor rounding)
+            long boundary = ((long) frame * Ym2149Processor.YM_CLOCK + ym.frameRate() / 2)
+                    / ym.frameRate();
             assertTrue(signals.at(14).boolAt(boundary),
                     "write-enable must be true at frame boundary t=" + boundary);
-            // Samples between boundaries must be false
+            // Samples immediately after the boundary must be false
             for (long t = boundary + 1; t < boundary + ratio && t < boundary + 10; t++) {
                 assertFalse(signals.at(14).boolAt(t),
                         "write-enable must be false between frames at t=" + t);
