@@ -46,7 +46,16 @@ class Ym2149ProcessorTest {
         var proc = Ym2149Processor.of(source);
 
         assertEquals(Ym2149Processor.YM_CLOCK, proc.context().frequency(),
-                "context frequency must equal YM_CLOCK");
+                "context frequency must equal YM_CLOCK (PAL default)");
+    }
+
+    @Test
+    void processor_ntscClock_contextFrequencyIsNtscMasterClock() throws IOException {
+        var source = fileProcessor("capture.ym");
+        var proc = Ym2149Processor.of(source, Ym2149Processor.YM2149_F_MASTER_NTSC);
+
+        assertEquals((long) Ym2149Processor.YM2149_F_MASTER_NTSC, proc.context().frequency(),
+                "context frequency must equal (long) YM2149_F_MASTER_NTSC");
     }
 
     @Test
