@@ -55,7 +55,7 @@ class Ym2149ProcessorTest {
         var proc = Ym2149Processor.of(source, Ym2149Processor.YM2149_F_MASTER_NTSC);
 
         assertEquals((long) Ym2149Processor.YM2149_F_MASTER_NTSC, proc.context().frequency(),
-                "context frequency must equal (long) YM2149_F_MASTER_NTSC");
+                "context frequency must equal YM_CLOCK (NTSC)");
     }
 
     @Test
