@@ -20,7 +20,7 @@ public record YmFile(
      * Returns the value of register {@code reg} at frame {@code frameIndex}.
      *
      * @param frameIndex frame index (0-based)
-     * @param reg        register index (0–13)
+     * @param reg        register index (0–13 or 0-15)
      * @return register value as an unsigned int (0–255)
      */
     public int registerAt(int frameIndex, int reg) {

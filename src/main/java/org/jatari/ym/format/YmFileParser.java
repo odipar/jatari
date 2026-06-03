@@ -236,24 +236,25 @@ public class YmFileParser {
         }
 
         // Read frame data
-        int frameDataLen = numFrames * 14;
+        int frameDataLen = numFrames * 16;
         if (pos + frameDataLen > data.length) {
             throw new IOException("YM5/YM6 frame data truncated (need " + frameDataLen
                     + " bytes, have " + (data.length - pos) + ')');
         }
 
-        byte[][] frames = new byte[numFrames][14];
+        byte[][] frames = new byte[numFrames][16];
         if (interleaved) {
+            //if (1 == 1) throw new RuntimeException("no");
             // Interleaved: data[reg * numFrames + frame] for all regs then all frames
-            for (int r = 0; r < 14; r++) {
+            for (int r = 0; r < 16; r++) {
                 for (int f = 0; f < numFrames; f++) {
                     frames[f][r] = data[pos + r * numFrames + f];
                 }
             }
         } else {
-            // Non-interleaved: sequential frames, 14 bytes each
+            // Non-interleaved: sequential frames, 16 bytes each
             for (int f = 0; f < numFrames; f++) {
-                System.arraycopy(data, pos + f * 14, frames[f], 0, 14);
+                System.arraycopy(data, pos + f * 16, frames[f], 0, 16);
             }
         }
 
