@@ -12,7 +12,7 @@ import org.jaust.signal.SignalArray;
  * {@link org.jm2149.vhdl.indexed.Ym2149AudioIndexed} simulation and exposes the three channel outputs as jaust signals.
  *
  * <h2>Input (source processor)</h2>
- * <p>Accepts a source {@link Processor} with <b>15 outputs</b> running at the
+ * <p>Accepts a source {@link Processor} with <b>17 outputs</b> running at the
  * YM file frame rate (typically 50 Hz):
  * <ul>
  *   <li>Signals 0–13: INT values for YM2149 registers R0–R13</li>
@@ -35,7 +35,7 @@ import org.jaust.signal.SignalArray;
  * <h2>Usage</h2>
  * <pre>{@code
  * YmFile ym = YmFileParser.parse(Path.of("music.ym"));
- * Processor fileProc = YmFileProcessor.of(ym);       // 15 signals @ 50 Hz
+ * Processor fileProc = YmFileProcessor.of(ym);       // 17 signals @ 50 Hz
  *
  * // PAL (default)
  * Processor ymProc = Ym2149Processor.of(fileProc);
@@ -81,7 +81,7 @@ public record Ym2149Processor(Context context, Processor source) implements Defa
      * Creates a {@link Ym2149Processor} with the PAL master clock
      * ({@code (long) YM2149_F_MASTER_PAL} Hz).
      *
-     * @param source processor with 15 outputs (14 INT registers + 1 BOOL write-enable)
+     * @param source processor with 17 outputs (16 INT registers + 1 BOOL write-enable)
      *               at any source frequency lower than the master clock
      * @return a new processor at PAL master clock frequency with 3 INT outputs
      */
@@ -94,7 +94,7 @@ public record Ym2149Processor(Context context, Processor source) implements Defa
      * Use {@link #YM2149_F_MASTER_PAL} or {@link #YM2149_F_MASTER_NTSC} for
      * standard Atari ST clocks.
      *
-     * @param source       processor with 15 outputs (14 INT registers + 1 BOOL write-enable)
+     * @param source       processor with 17 outputs (16 INT registers + 1 BOOL write-enable)
      *                     at any source frequency lower than {@code masterClock}
      * @param masterClock  YM2149 master clock in Hz (e.g. {@link #YM2149_F_MASTER_PAL})
      * @return a new processor at {@code (long) masterClock} Hz with 3 INT outputs
@@ -108,7 +108,7 @@ public record Ym2149Processor(Context context, Processor source) implements Defa
     public Signal.Type[] outType() { return OUT_TYPES.clone(); }
 
     public SignalArray apply(SignalArray in) {
-        // Resample the 15-signal source up to YM_CLOCK Hz.
+        // Resample the 17-signal source up to YM_CLOCK Hz.
         // BOOL write-enable: true only at sample positions aligned with
         // the original source frame boundaries; false (zero-stuffed) elsewhere.
         return new SimulationState(context.resample(source).apply()).buildOutputArray(context);

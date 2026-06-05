@@ -77,7 +77,7 @@ class YmFileProcessorTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void processor_captureYm_has15OutputsAtFrameRate() throws IOException {
+    void processor_captureYm_has17OutputsAtFrameRate() throws IOException {
         YmFile ym = YmFileParser.parse(DATA_DIR.resolve("capture.ym"));
         var proc = YmFileProcessor.of(ym);
 
@@ -86,7 +86,7 @@ class YmFileProcessorTest {
                 "context frequency must equal frame rate");
 
         // Must have exactly 17 outputs: 16 INT registers + 1 BOOL write-enable
-        assertEquals(17, proc.outType().length, "15 output signals");
+        assertEquals(17, proc.outType().length, "17 output signals");
         for (int i = 0; i < 16; i++) {
             assertEquals(org.jaust.Signal.Type.INT, proc.outType()[i],
                     "output %d must be INT".formatted(i));
