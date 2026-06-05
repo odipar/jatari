@@ -26,4 +26,8 @@ public record YmFile(
     public int registerAt(int frameIndex, int reg) {
         return frames[frameIndex][reg] & 0xFF;
     }
+    
+    public int numberOfRegisters() {
+        return frames[0].length;
+    }
 }

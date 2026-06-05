@@ -20,7 +20,7 @@ import java.util.function.IntSupplier;
  *
  * <h2>Pipeline</h2>
  * <pre>
- * YmFileProcessor (frameRate Hz, 15 signals)
+ * YmFileProcessor (frameRate Hz, 17 signals)
  *   → Ym2149Processor (2 MHz, 3 INT signals: chA / chB / chC)
  *     → YmMixer (2 MHz, 1 INT signal: mixed)
  *       → [optional] LowPassFilter  (2 MHz, IIR, 1 INT)

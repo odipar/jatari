@@ -51,14 +51,22 @@ public final class YmFileProcessor {
         int numFrames = ymFile.numFrames();
 
         // One genI processor per register (R0 .. R13) + one genB write-enable
-        Processor[] procs = new Processor[15];
-        for (int r = 0; r < 14; r++) {
+        Processor[] procs = new Processor[17];
+        int regs = ymFile.numberOfRegisters();
+        for (int r = 0; r < 16; r++) {
             final int reg = r;
-            procs[r] = ctx.genI(time -> ymFile.registerAt((int) (time % numFrames), reg));
+            if (r < regs) {
+                // YM3 (14 regs)
+                procs[r] = ctx.genI(time -> ymFile.registerAt((int) (time % numFrames), reg));
+            }
+            else {
+                // YM5,6 (16 regs)
+                procs[r] = ctx.valI(0);
+            }
         }
         // Write-enable: always true in the source (50 Hz) domain.
         // When upsampled, only the aligned sample positions carry true.
-        procs[14] = ctx.genB(time -> true);
+        procs[16] = ctx.genB(time -> true);
 
         // Combine all 15 processors in parallel (Faust-style ',')
         return ctx.par(procs);

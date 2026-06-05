@@ -125,11 +125,11 @@ class Ym2149ProcessorTest {
             // Canonical output time for this frame (mirrors jaust UpProcessor rounding)
             long boundary = ((long) frame * Ym2149Processor.YM_CLOCK + ym.frameRate() / 2)
                     / ym.frameRate();
-            assertTrue(signals.at(14).boolAt(boundary),
+            assertTrue(signals.at(16).boolAt(boundary),
                     "write-enable must be true at frame boundary t=" + boundary);
             // Samples immediately after the boundary must be false
             for (long t = boundary + 1; t < boundary + ratio && t < boundary + 10; t++) {
-                assertFalse(signals.at(14).boolAt(t),
+                assertFalse(signals.at(16).boolAt(t),
                         "write-enable must be false between frames at t=" + t);
             }
         }
@@ -151,7 +151,7 @@ class Ym2149ProcessorTest {
             long end   = start + ratio;
             long trueCount = 0;
             for (long t = start; t < end; t++) {
-                if (signals.at(14).boolAt(t)) trueCount++;
+                if (signals.at(16).boolAt(t)) trueCount++;
             }
             assertEquals(1, trueCount,
                     "write-enable must fire exactly once per frame (frame %d)".formatted(frame));

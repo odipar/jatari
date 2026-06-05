@@ -124,7 +124,7 @@ public record Ym2149Processor(Context context, Processor source) implements Defa
 
         @Override
         protected void writeRegisters(long i) {
-            if (src.at(14).boolAt(i)) {
+            if (src.at(16).boolAt(i)) {
                 for (int r = 0; r < 14; r++) {
                     int srcVal = src.at(r).intAt(i);
                     // when R13=255 do not touch (and reset!) the envelope generator on that sample

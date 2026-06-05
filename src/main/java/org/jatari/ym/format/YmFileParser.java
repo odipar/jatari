@@ -14,7 +14,7 @@ import java.nio.file.Path;
  *   <li><b>YM5! / YM6!</b> – may be stored verbatim or wrapped in a single-file
  *       LHA (-lh5-) archive. The header carries an explicit frame rate and YM
  *       master clock. Frame data may be interleaved (bit 0 of song attributes)
- *       or non-interleaved.</li>
+ *       or non-interleaved. Frame layout is 16 bytes / frame </li>
  * </ul>
  *
  * <h2>Usage</h2>
